@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "test": "node --test src/ui.test.js",
-    "build": "vite build"
+    "build": "vite build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0"

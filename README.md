@@ -31,8 +31,6 @@ cargo run -p agents_manager_cli -- init-project \
 
 旧的 `profile` / `apply` / `doctor` CLI 仍保留，但不再是主工作流。
 
-## Profile 示例
-
 ## Warehouse
 
 统一仓库目录：
@@ -46,7 +44,40 @@ registry 元数据保存：
 - `tags`
 - `source_hint`
 
-首次进入新工作流时，应用会执行一次 legacy migration。之后不再自动迁移，但桌面端会提供手动迁移按钮。
+首次进入新工作流时，应用会执行一次 legacy migration：
+
+- 从 `~/.codex/skills`
+- 从 `~/.claude/skills`
+- 移动到 `~/.agents-manager/skills`
+
+之后不再自动迁移，但桌面端会提供手动迁移按钮。
+
+同名冲突处理规则：
+
+- 同名同内容：保留一份 warehouse 副本
+- 同名不同内容：按固定顺序 `codex -> claude` 处理，后者覆盖前者
+
+客户端后续启用的 skill 统一从 warehouse 同步回去，不再把原始客户端目录当作持续展示来源。
+
+## Init Project
+
+项目初始化命令使用 stable numeric ID：
+
+```bash
+agents-manager init-project --client codex --skills 1,2,3
+```
+
+它会：
+
+- 解析 warehouse 中的 stable ID
+- 创建目标项目下的客户端目录
+- 生成对应 memory file
+- 以 `symlink` 或 `copy` 方式写入选中的 skill
+
+memory file 规则：
+
+- `codex` -> `AGENTS.md`
+- `claude` -> `CLAUDE.md`
 
 ## Profile 示例
 
@@ -78,3 +109,9 @@ GUI 支持：
 - 手动迁移现有 Codex / Claude skill
 - 同步 warehouse skill 到客户端目录
 - 生成 `init-project` 命令
+
+当前桌面工作台包含：
+
+- 左侧 grouped skill navigator
+- 中间文件树和文本编辑器
+- 右侧 metadata、迁移、同步和命令生成面板

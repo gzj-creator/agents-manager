@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "agents-manager",
-        "width": 1000,
-        "height": 760
+        "title": "agents-manager warehouse",
+        "width": 1460,
+        "height": 940,
+        "minWidth": 1180,
+        "minHeight": 760
       }
     ]
   }
