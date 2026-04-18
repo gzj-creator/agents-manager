@@ -1,1 +1,3 @@
 target/
+crates/agents_manager_desktop/node_modules/
+crates/agents_manager_desktop/dist/
