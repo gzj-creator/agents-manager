@@ -9,6 +9,10 @@ pub const APP_CONFIG_DIR_NAME: &str = "agents-manager";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default = "default_skill_warehouse")]
+    pub skill_warehouse: PathBuf,
+    #[serde(default = "default_registry_path")]
+    pub registry_path: PathBuf,
     #[serde(default)]
     pub library_roots: Vec<PathBuf>,
     #[serde(default)]
@@ -18,20 +22,26 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            library_roots: default_library_roots(),
+            skill_warehouse: default_skill_warehouse(),
+            registry_path: default_registry_path(),
+            library_roots: Vec::new(),
             default_profile: Some("claude".to_string()),
         }
     }
 }
 
-fn default_library_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    if let Some(home) = dirs::home_dir() {
-        roots.push(home.join(".agents").join("skills"));
-        roots.push(home.join(".codex").join("skills"));
-        roots.push(home.join(".cursor").join("skills-cursor"));
-    }
-    roots
+fn app_home_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".agents-manager")
+}
+
+fn default_skill_warehouse() -> PathBuf {
+    app_home_dir().join("skills")
+}
+
+fn default_registry_path() -> PathBuf {
+    app_home_dir().join("registry.toml")
 }
 
 pub fn config_dir() -> Result<PathBuf> {
@@ -51,6 +61,7 @@ pub fn profiles_dir() -> Result<PathBuf> {
 fn init_dirs() -> Result<()> {
     fs::create_dir_all(config_dir()?)?;
     fs::create_dir_all(profiles_dir()?)?;
+    fs::create_dir_all(app_home_dir())?;
     Ok(())
 }
 
@@ -110,8 +121,11 @@ pub fn load_app_config() -> Result<AppConfig> {
     }
     let s = fs::read_to_string(&path)?;
     let mut cfg: AppConfig = toml::from_str(&s)?;
-    if cfg.library_roots.is_empty() {
-        cfg.library_roots = default_library_roots();
+    if cfg.skill_warehouse.as_os_str().is_empty() {
+        cfg.skill_warehouse = default_skill_warehouse();
+    }
+    if cfg.registry_path.as_os_str().is_empty() {
+        cfg.registry_path = default_registry_path();
     }
     Ok(cfg)
 }

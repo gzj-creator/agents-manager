@@ -5,7 +5,9 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::{apply_to_project, doctor, AppConfig, ApplySelections, InstallMode, Profile};
+    use crate::{
+        apply_to_project, doctor, AppConfig, ApplySelections, InstallMode, Profile, SkillRegistry,
+    };
 
     fn setup_skill(root: &std::path::Path, name: &str) {
         let d = root.join(name);
@@ -30,6 +32,8 @@ mod tests {
         fs::write(&agents_src, "a").unwrap();
 
         let cfg = AppConfig {
+            skill_warehouse: tmp.path().join("warehouse"),
+            registry_path: tmp.path().join("registry.toml"),
             library_roots: vec![lib.clone()],
             default_profile: Some("claude".into()),
         };
@@ -64,6 +68,8 @@ mod tests {
         setup_skill(&lib, "skill_a");
 
         let cfg = AppConfig {
+            skill_warehouse: tmp.path().join("warehouse"),
+            registry_path: tmp.path().join("registry.toml"),
             library_roots: vec![lib],
             default_profile: Some("claude".into()),
         };
@@ -84,5 +90,19 @@ mod tests {
         let rep = doctor(&project, &profile, &cfg).unwrap();
         assert!(!rep.broken_symlinks.is_empty());
         assert!(!rep.ok);
+    }
+
+    #[test]
+    fn default_config_uses_agents_manager_skill_root() {
+        let cfg = AppConfig::default();
+        assert!(cfg.library_roots.is_empty());
+        assert!(cfg.skill_warehouse.ends_with(".agents-manager/skills"));
+    }
+
+    #[test]
+    fn fresh_registry_starts_with_next_id_one() {
+        let reg = SkillRegistry::default();
+        assert_eq!(reg.next_id, 1);
+        assert!(reg.skills.is_empty());
     }
 }
