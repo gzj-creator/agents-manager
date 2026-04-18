@@ -4,192 +4,273 @@
 
 ## Context
 
-The current project is built around scanning multiple existing client skill directories and applying selected skills into project-local targets through profiles. That model does not match the intended product.
+The current product still carries the old profile-centric model:
 
-The intended product is a single source of truth for all skills, with the desktop client managing:
+- skills are discovered from multiple external roots
+- the desktop UI is centered on profile editing and project apply flows
+- there is no application-owned warehouse for skills
+- there is no first-class metadata model for grouping or tagging skills
 
-- a unified skill warehouse
-- stable numeric skill IDs
-- client-specific global synchronization
-- project initialization command generation
-- full in-app editing for entire skill directories
+That model does not match the intended product. The application needs one managed warehouse, one registry, explicit client sync, and a desktop workspace that feels like a dedicated skill manager instead of a form wrapper around CLI actions.
 
 ## Product Goal
 
-Redefine `agents-manager` as a skill warehouse manager centered on:
+Redefine `agents-manager` as a warehouse-first desktop application with:
 
-- source: `~/.agents-manager/skills`
-- metadata: `~/.agents-manager` registry files
-- targets:
-  - global client skill locations for Codex / Claude / Cursor
-  - per-project initialization via generated CLI commands
+- a single source of truth at `~/.agents-manager/skills`
+- stable numeric IDs owned by the application
+- registry-owned metadata for skill type and tags
+- one bootstrap migration from existing client roots into the warehouse
+- explicit manual migration after bootstrap through a desktop button
+- client sync that always writes warehouse-managed skills back into Codex / Claude / Cursor
+- a richer desktop UI for browsing, filtering, editing, and distributing skills
 
 ## Core Model
 
-### Single Skill Source
+### Single Warehouse Source
 
-All skills live under:
+All skill discovery for the product UI must come only from:
 
 `~/.agents-manager/skills`
 
-This is the only source directory. Existing client-specific directories are targets, not sources.
+The desktop client must not list skills directly from `~/.codex/skills` or `~/.claude/skills`. Those paths become migration inputs and client sync targets, not ongoing listing sources.
 
 ### Stable Numeric IDs
 
-The application assigns each discovered skill a stable integer ID stored in persistent metadata under `~/.agents-manager`.
+Each warehouse skill gets a persistent numeric ID in registry metadata under `~/.agents-manager`.
 
 Rules:
 
 - IDs are assigned once
-- IDs are monotonically increasing
+- IDs increase monotonically
 - IDs are never reused
-- deleting a skill retires the ID permanently
+- deleted or missing skills retire their IDs
 
-These IDs are the canonical references used in generated CLI commands.
+These IDs become the canonical references used by the CLI, generated commands, and desktop actions.
 
-### Skill Identity
+### Registry-Owned Metadata
 
-The product should not require authors to embed explicit IDs in `SKILL.md`.
+Skill grouping metadata must live in the application registry, not in `SKILL.md`.
 
-Instead, the application owns identity through a registry file that maps:
+Each registry entry should track:
 
-- stable integer ID
-- current skill path
-- lifecycle status
-- timestamps
-- optional sync metadata
+- `stable_id`
+- `id`
+- `path`
+- `active`
+- `skill_type`
+- `tags`
+- `source_hint`
 
-When a skill is renamed or moved through the application, the registry preserves its ID.
+`skill_type` and `tags` are the authoritative values used by the desktop UI for grouping and filtering. Editing them in the UI updates registry state only.
 
-## User Flows
+## Migration Model
 
-### Flow 1: Manage Warehouse Skills
+### Bootstrap Migration
 
-The GUI presents the contents of `~/.agents-manager/skills` as the main skill list. Users can:
+On first launch of the redesigned product, the application performs a one-time migration from:
 
-- create a new skill directory
-- browse the entire directory tree
-- edit any text file
-- create files and folders
-- rename or delete files and folders
-- rename or delete skills
+- `~/.codex/skills`
+- `~/.claude/skills`
 
-The app editor is responsible for the whole skill directory, not just `SKILL.md`.
+This bootstrap migration moves valid skill directories into `~/.agents-manager/skills`.
 
-### Flow 2: Sync Global Skills
+The application stores a flag such as `bootstrap_migration_done` in app config so this automatic migration only happens once.
 
-The user selects one or more skills, then chooses:
+### Manual Migration
 
-- client: `codex`, `claude`, or `cursor`
-- purpose: global skill
+After bootstrap, migration must never run automatically again.
 
-The application synchronizes the selected skills from `~/.agents-manager/skills` into the chosen client’s global skill location.
+The desktop UI exposes a manual "migrate existing skills" action that re-runs the same migration logic on demand.
 
-The sync behavior should prefer symlinks by default, with copy support as a fallback mode.
+### Move Semantics
 
-### Flow 3: Generate Project Initialization Command
+Migration uses move semantics, not copy semantics.
 
-The user selects one or more skills, then chooses:
+Reasons:
 
-- client: `codex`, `claude`, or `cursor`
-- purpose: project skill
+- warehouse must become the only real source of truth
+- clients should not keep using stale pre-migration skill directories
+- later sync operations must always push warehouse-managed content back into client roots
 
-The GUI generates a command such as:
+If the application enables a skill for a client after migration, the enabled version must come from the warehouse, not from an old leftover directory.
 
-`agents-manager init-project --client codex --skills 1,2,3`
+### Collision Resolution
 
-The user copies this command and runs it in a target project directory.
+Migration scans sources in deterministic order:
 
-## Project Initialization Rules
+1. `codex`
+2. `claude`
 
-The new CLI command `init-project` should:
+If two skills share a name:
 
-- run in the current project directory
-- accept a client type
-- accept skill IDs
-- resolve IDs through the registry
-- create the client-specific project directory
-- create the correct persistent memory file
-- link or copy selected skills into the project-specific client directory
+- same content: keep one warehouse copy and remove the later duplicate from its source root
+- different content: the later discovered version overwrites the earlier one in the warehouse
 
-Memory file rules:
+With the fixed scan order above, `claude` wins conflicts against `codex`.
+
+## Client Sync Model
+
+Client roots remain:
+
+- Codex: `~/.codex/skills`
+- Claude: `~/.claude/skills`
+- Cursor: `~/.cursor/skills`
+
+These are output targets. The product syncs selected warehouse skills into them by symlink or copy.
+
+This means the runtime flow is:
+
+1. migration moves legacy skills into warehouse
+2. desktop edits warehouse files and registry metadata
+3. sync writes chosen warehouse skills back to target clients
+
+## Project Initialization
+
+The new `init-project` command still generates project-local client directories from selected warehouse skill IDs.
+
+The command should:
+
+- accept client kind
+- accept numeric skill IDs
+- resolve them through warehouse-backed scan results
+- create the correct client project directory
+- create the correct memory file
+- link or copy warehouse skills into the project-local client directory
+
+Memory files remain:
 
 - `claude` -> `CLAUDE.md`
 - `codex` -> `AGENTS.md`
-- `cursor` -> the Cursor-specific memory file used by the product
+- `cursor` -> product-defined cursor memory file
 
-The design assumes Cursor follows the same pattern of “client directory + memory file”, but its exact filename should be confirmed from product expectations during implementation if not already encoded locally.
+## Desktop Information Architecture
 
-## GUI Structure
+The desktop client should become a warehouse workspace with four major areas:
 
-The desktop UI should shift from the current profile/apply form into a three-pane workspace:
+### 1. Skill Navigator
 
-- left pane: skill list and search
-- center pane: selected skill tree and file editor
-- right pane: target client selection, global sync actions, and project command generation
+The left rail shows warehouse skills only.
 
-This layout keeps repository management, editing, and distribution separate while preserving a direct workflow.
+It supports:
 
-## Editor Scope
+- search by name or ID
+- grouping by `skill_type`
+- tag filtering
+- per-skill summary chips for type, tags, and target sync state
 
-The built-in editor should support editing the entire skill directory:
+Grouping should be visual and obvious, not just a flat list with secondary labels.
 
-- `SKILL.md`
-- scripts
-- references
-- assets
-- arbitrary text files
+### 2. Skill Tree And Editor
 
-Binary files do not need inline editing in phase one. They only need safe listing and file operations.
+The middle workspace shows:
 
-## Data And Persistence
+- selected skill file tree
+- selected file editor
+- file/folder create, rename, delete
 
-Recommended application-owned paths:
+Phase one still limits inline editing to text files.
 
-- `~/.agents-manager/skills/` for source skill directories
-- `~/.agents-manager/registry.json` or `registry.toml` for stable IDs and status
-- optional operation history or sync metadata under the same config root
+### 3. Metadata And Distribution Panel
 
-The registry should track at minimum:
+The right rail shows:
 
-- numeric ID
-- relative or absolute warehouse path
-- active / deleted / missing state
-- created timestamp
-- updated timestamp
+- stable ID
+- editable `skill_type`
+- editable tags
+- target client picker
+- sync action
+- generated `init-project` command
+
+Metadata edits update registry only.
+
+### 4. Migration And System Actions
+
+The shell includes a clear migration action area with:
+
+- one-time migration status
+- manual migration button
+- migration result summary
+
+Users should understand when migration has already happened and when they are explicitly running it again.
+
+## UI Direction
+
+This redesign is also a visual refresh.
+
+The new interface should:
+
+- preserve the current warm editorial palette only if it still fits the warehouse workspace
+- feel more like a toolbench than a profile form
+- make grouped navigation, filters, and editing hierarchy obvious at a glance
+- improve information density without collapsing into cramped admin UI
+- keep strong desktop readability and usable mobile-width fallback behavior
+
+The page should move away from "stacked forms plus output box" into a deliberate workspace layout with clearer hierarchy, stronger grouping, and more discoverable actions.
+
+## Persistence
+
+Recommended app-owned paths:
+
+- `~/.agents-manager/skills/`
+- `~/.agents-manager/registry.toml`
+- `~/.agents-manager/config.toml`
+
+Config should track at minimum:
+
+- `skill_warehouse`
+- `registry_path`
+- `bootstrap_migration_done`
+
+Registry should track at minimum:
+
+- stable identity
+- warehouse path
+- lifecycle state
+- `skill_type`
+- `tags`
+- `source_hint`
 
 ## Error Handling
 
-- Missing skill paths referenced by the registry should surface as invalid entries, not crashes.
-- Invalid skill IDs passed to `init-project` must fail with explicit diagnostics.
-- Global target directories should be created automatically if missing.
-- Existing conflicting files in global or project targets should not be overwritten implicitly.
-- File editing failures should preserve the unsaved editor buffer in the GUI.
+- Missing or invalid source directories during migration should not crash startup.
+- Migration reports must explicitly show imported, overwritten, skipped, and removed counts.
+- Conflicting target files during client sync should be overwritten only when they correspond to the explicit sync action, not silently during unrelated operations.
+- Missing registry entries should surface as invalid skill IDs, not panics.
+- File editor save failures must preserve unsaved buffer state in the UI.
 
 ## Validation Criteria
 
 The redesign is considered correct when:
 
-- all warehouse skills are sourced only from `~/.agents-manager/skills`
-- each skill gets a stable non-reused numeric ID
-- global sync works for Codex / Claude / Cursor
-- generated `init-project` commands resolve IDs correctly
-- running `init-project` creates the client-specific directory and memory file
-- the desktop UI can edit arbitrary text files under a skill directory
+- desktop skill listing only reflects `~/.agents-manager/skills`
+- bootstrap migration runs once and records completion
+- later launches do not auto-migrate again
+- manual migration remains available and re-runnable
+- migrated legacy client directories no longer remain the live source for those skills
+- registry stores stable IDs, `skill_type`, and tags
+- UI groups skills by type and filters by tags
+- syncing a skill to Codex / Claude / Cursor writes the warehouse-managed version
+- generated `init-project` commands still resolve warehouse IDs correctly
 
 ## Phase One Scope
 
-Phase one should include:
+Phase one includes:
 
 - warehouse source root
 - stable registry IDs
-- global sync for all three clients
-- `init-project` command generation and execution
-- desktop skill list, tree view, and text editor
+- registry-owned `skill_type` and tags
+- one-time bootstrap migration
+- manual migration action
+- client sync for Codex / Claude / Cursor
+- generated `init-project` command flow
+- desktop grouped skill list, filters, tree view, text editor, and metadata editing
+- desktop page polish aligned with the new workflow
 
-Phase one should exclude:
+Phase one excludes:
 
-- advanced editor features such as tabs, syntax tooling, or binary previews
-- multi-user registry coordination
+- binary previews
+- advanced editor tooling
+- background automatic reconciliation after bootstrap
 - remote sync
-- automatic migration of every pre-existing external skill directory
+- metadata embedded back into `SKILL.md`

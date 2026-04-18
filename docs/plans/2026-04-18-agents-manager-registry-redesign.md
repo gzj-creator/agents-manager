@@ -2,15 +2,17 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Rebuild `agents-manager` around a single warehouse at `~/.agents-manager/skills`, stable numeric skill IDs, client global sync, generated `init-project` commands, and a desktop editor for whole skill directories.
+**Goal:** Rebuild `agents-manager` around a single warehouse at `~/.agents-manager/skills`, stable numeric skill IDs, one-time legacy migration, registry-owned skill metadata, client global sync, generated `init-project` commands, and a desktop editor for whole skill directories.
 
-**Architecture:** Replace the current multi-root skill scanning model with an application-owned warehouse plus registry metadata. Extend the Rust core with registry, target, and init-project services, then reorganize the Tauri desktop UI around warehouse browsing, editing, and distribution actions.
+**Architecture:** The Rust core owns warehouse discovery, registry metadata, migration, sync, and init-project services. The Tauri desktop app becomes a warehouse workspace with grouped skill browsing, metadata editing, migration controls, and distribution actions. Client roots are targets, not listing sources.
 
 **Tech Stack:** Rust workspace crates, Tauri 2, Vite, vanilla JavaScript, CSS, Node built-in test runner
 
+**Execution Note:** On the current `registry-redesign` branch, the original Task 1-3 work has already landed. Continue from the first unfinished task in this plan when executing in the current session.
+
 ---
 
-### Task 1: Define the new app-owned config and registry model
+### Task 1: Define the app-owned config and registry model
 
 **Files:**
 - Modify: `crates/agents_manager_core/src/config.rs`
@@ -20,23 +22,7 @@
 
 **Step 1: Write the failing test**
 
-Add a Rust test asserting that default app state points to `~/.agents-manager/skills` and that a fresh registry starts empty but supports a next ID counter.
-
-```rust
-#[test]
-fn default_config_uses_agents_manager_skill_root() {
-    let cfg = AppConfig::default();
-    assert!(cfg.library_roots.is_empty());
-    assert!(cfg.skill_warehouse.ends_with(".agents-manager/skills"));
-}
-
-#[test]
-fn fresh_registry_starts_with_next_id_one() {
-    let reg = SkillRegistry::default();
-    assert_eq!(reg.next_id, 1);
-    assert!(reg.skills.is_empty());
-}
-```
+Add tests asserting default app state points to `~/.agents-manager/skills` and a fresh registry starts empty with `next_id = 1`.
 
 **Step 2: Run test to verify it fails**
 
@@ -48,9 +34,9 @@ Expected: FAIL because `skill_warehouse` and `SkillRegistry` do not exist yet.
 
 Implement:
 
-- `AppConfig` fields for application-owned warehouse and registry paths
-- `SkillRegistry` type with `next_id` and persistent entries
-- load/save helpers for registry state
+- `AppConfig` fields for warehouse and registry paths
+- `SkillRegistry` with `next_id` and persisted entries
+- registry load/save helpers
 - exports from `lib.rs`
 
 **Step 4: Run test to verify it passes**
@@ -79,27 +65,7 @@ git commit -m "feat: add agents-manager registry model"
 
 **Step 1: Write the failing test**
 
-Add a test that creates two skills under a temporary warehouse and verifies they receive stable numeric IDs, and that deleting one does not renumber the other.
-
-```rust
-#[test]
-fn warehouse_scan_assigns_stable_non_reused_ids() {
-    let ctx = TestCtx::new();
-    ctx.create_skill("alpha");
-    ctx.create_skill("beta");
-
-    let first = scan_warehouse(&ctx.cfg).unwrap();
-    assert_eq!(first[0].stable_id, 1);
-    assert_eq!(first[1].stable_id, 2);
-
-    ctx.remove_skill("alpha");
-    ctx.create_skill("gamma");
-
-    let second = scan_warehouse(&ctx.cfg).unwrap();
-    assert!(second.iter().any(|e| e.id == "beta" && e.stable_id == 2));
-    assert!(second.iter().any(|e| e.id == "gamma" && e.stable_id == 3));
-}
-```
+Add a test that scans a temporary warehouse and verifies IDs are stable and never reused.
 
 **Step 2: Run test to verify it fails**
 
@@ -111,11 +77,11 @@ Expected: FAIL because stable IDs are not tracked.
 
 Update warehouse scanning so it:
 
-- scans only the application-owned warehouse
-- reconciles discovered skill directories against the registry
+- scans only the app-owned warehouse
+- reconciles discovered directories against the registry
 - assigns IDs only to new skills
 - preserves IDs for existing skills
-- marks missing skills as inactive or missing
+- marks missing skills inactive
 
 Extend `SkillEntry` with stable numeric ID data.
 
@@ -145,17 +111,7 @@ git commit -m "feat: assign stable ids to warehouse skills"
 
 **Step 1: Write the failing test**
 
-Add a test for resolving global target directories for `codex`, `claude`, and `cursor`.
-
-```rust
-#[test]
-fn client_global_targets_resolve_expected_paths() {
-    let roots = ClientRoots::from_home(Path::new("/tmp/home"));
-    assert_eq!(roots.global_skill_root(ClientKind::Codex), PathBuf::from("/tmp/home/.codex/skills"));
-    assert_eq!(roots.global_skill_root(ClientKind::Claude), PathBuf::from("/tmp/home/.claude/skills"));
-    assert_eq!(roots.global_skill_root(ClientKind::Cursor), PathBuf::from("/tmp/home/.cursor/skills"));
-}
-```
+Add a test for resolving client global target directories for `codex`, `claude`, and `cursor`.
 
 **Step 2: Run test to verify it fails**
 
@@ -170,9 +126,7 @@ Implement:
 - `ClientKind`
 - client global skill roots
 - sync request type for selected warehouse skills
-- application logic for linking or copying selected skills into the correct global target
-
-Do not bundle project init into this task.
+- application logic for linking or copying selected skills into target client roots
 
 **Step 4: Run test to verify it passes**
 
@@ -190,7 +144,73 @@ git add crates/agents_manager_core/src/targets.rs \
 git commit -m "feat: add client global target sync"
 ```
 
-### Task 4: Add `init-project` command path in the Rust core
+### Task 4: Add registry metadata and one-time legacy migration
+
+**Files:**
+- Create: `crates/agents_manager_core/src/migration.rs`
+- Modify: `crates/agents_manager_core/src/config.rs`
+- Modify: `crates/agents_manager_core/src/registry.rs`
+- Modify: `crates/agents_manager_core/src/lib.rs`
+- Test: `crates/agents_manager_core/src/core_tests.rs`
+
+**Step 1: Write the failing tests**
+
+Add tests for:
+
+- one-time bootstrap migration moving skills from `.codex/skills` and `.claude/skills` into the warehouse
+- same-name same-content deduplication
+- same-name different-content overwrite where the later scan wins
+- registry metadata storage for `skill_type`, `tags`, and `source_hint`
+
+Suggested test names:
+
+```rust
+#[test]
+fn bootstrap_migration_moves_client_skills_into_warehouse_once() { /* ... */ }
+
+#[test]
+fn bootstrap_migration_overwrites_with_later_conflicting_skill() { /* ... */ }
+
+#[test]
+fn registry_roundtrip_preserves_type_and_tags() { /* ... */ }
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run: `cargo test -p agents_manager_core bootstrap_migration_moves_client_skills_into_warehouse_once -- --exact`
+
+Expected: FAIL because migration and metadata fields do not exist yet.
+
+**Step 3: Write minimal implementation**
+
+Implement:
+
+- `bootstrap_migration_done` in config
+- registry fields `skill_type`, `tags`, `source_hint`
+- migration service that scans `codex` then `claude`
+- move semantics from client roots into warehouse
+- same-content dedupe and later-wins overwrite behavior
+- bootstrap-only automatic migration flag handling
+- reusable manual migration function that does not reset bootstrap state
+
+**Step 4: Run tests to verify they pass**
+
+Run: `cargo test -p agents_manager_core bootstrap_migration_moves_client_skills_into_warehouse_once -- --exact`
+
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add crates/agents_manager_core/src/migration.rs \
+  crates/agents_manager_core/src/config.rs \
+  crates/agents_manager_core/src/registry.rs \
+  crates/agents_manager_core/src/lib.rs \
+  crates/agents_manager_core/src/core_tests.rs
+git commit -m "feat: add warehouse migration and metadata"
+```
+
+### Task 5: Add `init-project` command path in the Rust core
 
 **Files:**
 - Create: `crates/agents_manager_core/src/init_project.rs`
@@ -199,29 +219,7 @@ git commit -m "feat: add client global target sync"
 
 **Step 1: Write the failing test**
 
-Add a test that runs init logic for Codex and Claude in a temporary project and verifies client directory plus memory file creation.
-
-```rust
-#[test]
-fn init_project_creates_codex_dir_and_agents_md() {
-    let ctx = TestCtx::new();
-    ctx.create_skill("alpha");
-    let scan = scan_warehouse(&ctx.cfg).unwrap();
-    let alpha = scan.iter().find(|s| s.id == "alpha").unwrap();
-
-    let report = init_project(
-        &ctx.project,
-        ClientKind::Codex,
-        vec![alpha.stable_id],
-        InitMode::Symlink,
-        &ctx.cfg,
-    ).unwrap();
-
-    assert!(ctx.project.join(".codex").exists());
-    assert!(ctx.project.join("AGENTS.md").exists());
-    assert!(!report.invalid_skill_ids.len() > 0);
-}
-```
+Add a test that initializes a Codex project from warehouse skill IDs and verifies client directory plus memory file creation.
 
 **Step 2: Run test to verify it fails**
 
@@ -234,12 +232,10 @@ Expected: FAIL because init-project support does not exist yet.
 Implement:
 
 - `init_project` request and report types
-- skill ID lookup through the registry-backed scan results
+- stable ID lookup through warehouse scan results
 - per-client project root creation
 - memory file creation rules
-- linking or copying selected skills into the project client directory
-
-Keep invalid ID reporting explicit.
+- linking or copying selected warehouse skills into project-local client directories
 
 **Step 4: Run test to verify it passes**
 
@@ -256,39 +252,44 @@ git add crates/agents_manager_core/src/init_project.rs \
 git commit -m "feat: add project init workflow"
 ```
 
-### Task 5: Expose new CLI commands and de-emphasize old profile-centric flow
+### Task 6: Expose CLI commands for migration, sync, and init-project
 
 **Files:**
 - Modify: `crates/agents_manager_cli/src/main.rs`
-- Test: `crates/agents_manager_core/src/core_tests.rs`
 - Modify: `README.md`
+- Test: `crates/agents_manager_core/src/core_tests.rs`
 
 **Step 1: Write the failing test**
 
-Add a CLI-facing test or parser test that expects:
+Add a CLI parser test that expects:
 
 ```text
 agents-manager init-project --client codex --skills 1,2,3
 ```
 
-to parse into the new init request.
+to parse correctly, and a second parser test for a manual migration command such as:
+
+```text
+agents-manager migrate-legacy-skills
+```
 
 **Step 2: Run test to verify it fails**
 
 Run: `cargo test -p agents_manager_cli init_project_cli_parses_skill_ids -- --exact`
 
-Expected: FAIL because the command does not exist yet.
+Expected: FAIL because the command surface does not exist yet.
 
 **Step 3: Write minimal implementation**
 
-Update CLI surface to support:
+Update the CLI to support:
 
 - `init-project`
+- `migrate-legacy-skills`
 - client selection
-- skill ID parsing
+- numeric skill ID parsing
 - optional install mode
 
-Adjust README examples so the warehouse and init-project workflows become the primary documented entry points.
+Adjust README examples so warehouse, migration, and init-project become the primary workflows.
 
 **Step 4: Run test to verify it passes**
 
@@ -302,10 +303,10 @@ Expected: PASS
 git add crates/agents_manager_cli/src/main.rs \
   crates/agents_manager_core/src/core_tests.rs \
   README.md
-git commit -m "feat: expose warehouse init-project cli"
+git commit -m "feat: expose warehouse migration and init-project cli"
 ```
 
-### Task 6: Add Tauri commands for warehouse browsing and global sync
+### Task 7: Expose Tauri commands for warehouse metadata, migration, and sync
 
 **Files:**
 - Modify: `crates/agents_manager_desktop/src-tauri/src/main.rs`
@@ -314,40 +315,43 @@ git commit -m "feat: expose warehouse init-project cli"
 
 **Step 1: Write the failing test**
 
-Add tests for new command-layer request shapes, for example global sync and file-tree listing payload serialization.
+Add command-layer serialization tests showing warehouse entries include `stable_id`, `skill_type`, and `tags`.
+
+Suggested test:
 
 ```rust
 #[test]
-fn warehouse_entries_serialize_stable_id_and_path() {
+fn warehouse_entries_serialize_metadata_fields() {
     let entry = SkillEntry { /* ... */ };
     let json = serde_json::to_value(entry).unwrap();
     assert_eq!(json["stable_id"], 1);
+    assert_eq!(json["skill_type"], "workflow");
+    assert_eq!(json["tags"][0], "rust");
 }
 ```
 
 **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p agents_manager_core warehouse_entries_serialize_stable_id_and_path -- --exact`
+Run: `cargo test -p agents_manager_core warehouse_entries_serialize_metadata_fields -- --exact`
 
-Expected: FAIL until the new fields and commands exist.
+Expected: FAIL until metadata fields and Tauri command payloads exist.
 
 **Step 3: Write minimal implementation**
 
 Expose Tauri commands for:
 
 - list warehouse skills
-- inspect a skill tree
-- read a file
-- write a file
-- create a file or folder
-- rename a path
-- delete a path
-- sync selected skills to a client global directory
-- generate an init-project command string
+- update skill metadata
+- inspect skill tree
+- read and write files
+- create, rename, and delete paths
+- run manual legacy migration
+- sync selected skills to client global directories
+- generate init-project command strings
 
 **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p agents_manager_core warehouse_entries_serialize_stable_id_and_path -- --exact`
+Run: `cargo test -p agents_manager_core warehouse_entries_serialize_metadata_fields -- --exact`
 
 Expected: PASS
 
@@ -360,7 +364,7 @@ git add crates/agents_manager_desktop/src-tauri/src/main.rs \
 git commit -m "feat: expose warehouse desktop commands"
 ```
 
-### Task 7: Replace the desktop UI information architecture
+### Task 8: Replace the desktop information architecture and visual shell
 
 **Files:**
 - Modify: `crates/agents_manager_desktop/src/main.js`
@@ -370,15 +374,27 @@ git commit -m "feat: expose warehouse desktop commands"
 
 **Step 1: Write the failing test**
 
-Add a UI helper test asserting the app shell now includes skill list, file tree, editor, client picker, and command output areas.
+Add a UI helper test asserting the app shell now includes:
+
+- grouped skill navigator
+- search/filter area
+- file tree
+- editor
+- metadata panel
+- migration action area
+- client action area
+
+Suggested test:
 
 ```js
-test('createAppShellHtml includes warehouse list, tree, editor, and action panel', () => {
+test('createAppShellHtml includes grouped navigator, editor, metadata, and migration panels', () => {
   const html = createAppShellHtml()
   assert.match(html, /data-role="skill-list"/)
+  assert.match(html, /data-role="filter-bar"/)
   assert.match(html, /data-role="skill-tree"/)
   assert.match(html, /data-role="editor"/)
-  assert.match(html, /data-role="client-actions"/)
+  assert.match(html, /data-role="metadata-panel"/)
+  assert.match(html, /data-role="migration-panel"/)
 })
 ```
 
@@ -386,20 +402,24 @@ test('createAppShellHtml includes warehouse list, tree, editor, and action panel
 
 Run: `npm --prefix crates/agents_manager_desktop test`
 
-Expected: FAIL because the old UI shell does not contain the new workspace.
+Expected: FAIL because the old shell is still profile-centric.
 
 **Step 3: Write minimal implementation**
 
-Refactor the desktop UI into:
+Refactor the desktop shell into:
 
-- skill warehouse list
-- selected skill tree
-- inline text editor
-- client target and purpose controls
-- global sync action
-- generated project command output
+- grouped warehouse skill navigator
+- filter/search toolbar
+- file tree and editor workspace
+- metadata and distribution sidebar
+- explicit migration area
 
-Do not implement final polish before the new workflow is functional.
+Apply the page polish as part of this task:
+
+- stronger layout hierarchy
+- more intentional spacing and grouping
+- clearer status and action affordances
+- no return to generic admin-form styling
 
 **Step 4: Run test to verify it passes**
 
@@ -414,10 +434,10 @@ git add crates/agents_manager_desktop/src/main.js \
   crates/agents_manager_desktop/src/ui.js \
   crates/agents_manager_desktop/src/styles.css \
   crates/agents_manager_desktop/src/ui.test.js
-git commit -m "feat: redesign desktop ui around warehouse workflow"
+git commit -m "feat: redesign desktop warehouse workspace"
 ```
 
-### Task 8: Add desktop file-tree editing flows
+### Task 9: Add metadata editing, filters, and manual migration flows
 
 **Files:**
 - Modify: `crates/agents_manager_desktop/src/main.js`
@@ -425,14 +445,25 @@ git commit -m "feat: redesign desktop ui around warehouse workflow"
 - Modify: `crates/agents_manager_desktop/src/styles.css`
 - Modify: `crates/agents_manager_desktop/src/ui.test.js`
 
-**Step 1: Write the failing test**
+**Step 1: Write the failing tests**
 
-Add tests for editor helpers that track selected file, dirty state, and save button state.
+Add tests for:
+
+- grouping skills by `skill_type`
+- filtering by tags
+- editor state dirty tracking
+- metadata update controls
+- manual migration result rendering
+
+Suggested test:
 
 ```js
-test('nextEditorState marks buffer dirty after text edit', () => {
-  const next = nextEditorState(createEditorState(), { type: 'edit', value: 'changed' })
-  assert.equal(next.dirty, true)
+test('groupSkillsByType groups entries under their registry type', () => {
+  const groups = groupSkillsByType([
+    { id: 'a', skill_type: 'workflow', tags: [] },
+    { id: 'b', skill_type: 'tooling', tags: [] }
+  ])
+  assert.equal(groups[0].label, 'workflow')
 })
 ```
 
@@ -440,18 +471,18 @@ test('nextEditorState marks buffer dirty after text edit', () => {
 
 Run: `npm --prefix crates/agents_manager_desktop test`
 
-Expected: FAIL because editor state helpers do not exist yet.
+Expected: FAIL because grouped metadata and migration helpers do not exist yet.
 
 **Step 3: Write minimal implementation**
 
 Implement desktop flows for:
 
-- selecting files
-- reading file contents
-- editing text buffers
-- saving files
-- creating files and folders
-- renaming and deleting paths
+- grouped skill rendering
+- tag filters and search
+- metadata editing and saving
+- manual migration button and result summary
+- file selection, editing, saving
+- create, rename, delete for files and folders
 
 Only support text editing in phase one.
 
@@ -468,10 +499,10 @@ git add crates/agents_manager_desktop/src/main.js \
   crates/agents_manager_desktop/src/ui.js \
   crates/agents_manager_desktop/src/styles.css \
   crates/agents_manager_desktop/src/ui.test.js
-git commit -m "feat: add desktop skill editor flows"
+git commit -m "feat: add warehouse metadata and migration flows"
 ```
 
-### Task 9: Final verification and documentation cleanup
+### Task 10: Final verification and documentation cleanup
 
 **Files:**
 - Modify: `README.md`
@@ -480,7 +511,7 @@ git commit -m "feat: add desktop skill editor flows"
 
 **Step 1: Write the final verification checklist**
 
-Confirm the following commands are the required evidence:
+Confirm these commands are the required evidence:
 
 ```bash
 cargo test -p agents_manager_core
@@ -507,8 +538,10 @@ Expected: PASS
 
 Rewrite README so it explains:
 
-- the warehouse root
+- warehouse root
+- one-time bootstrap migration and manual migration button
 - stable ID registry
+- registry-owned type/tag metadata
 - global sync flow
 - init-project flow
 - desktop editing capabilities
