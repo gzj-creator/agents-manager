@@ -7,8 +7,12 @@ mod error;
 mod library;
 mod profile;
 mod registry;
+mod targets;
 
-pub use apply::{apply_to_project, path_allowed_for_source, ApplyReport, ApplySelections, InstallMode};
+pub use apply::{
+    apply_to_project, path_allowed_for_source, sync_global_skills, ApplyReport, ApplySelections,
+    GlobalSyncReport, GlobalSyncRequest, InstallMode,
+};
 pub use config::{
     init_config_tree, load_app_config, save_app_config, write_default_profiles_if_missing, AppConfig,
 };
@@ -19,3 +23,4 @@ pub use profile::{list_profiles, load_profile, save_profile, Profile};
 pub use registry::{
     load_skill_registry, reconcile_registry, save_skill_registry, RegistrySkill, SkillRegistry,
 };
+pub use targets::{ClientKind, ClientRoots};

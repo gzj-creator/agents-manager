@@ -6,8 +6,8 @@ mod tests {
     use tempfile::{tempdir, TempDir};
 
     use crate::{
-        apply_to_project, doctor, scan_warehouse, AppConfig, ApplySelections, InstallMode, Profile,
-        SkillRegistry,
+        apply_to_project, doctor, scan_warehouse, AppConfig, ApplySelections, ClientKind,
+        ClientRoots, InstallMode, Profile, SkillRegistry,
     };
 
     struct TestCtx {
@@ -157,5 +157,22 @@ mod tests {
         let second = scan_warehouse(&ctx.cfg).unwrap();
         assert!(second.iter().any(|e| e.id == "beta" && e.stable_id == 2));
         assert!(second.iter().any(|e| e.id == "gamma" && e.stable_id == 3));
+    }
+
+    #[test]
+    fn client_global_targets_resolve_expected_paths() {
+        let roots = ClientRoots::from_home(std::path::Path::new("/tmp/home"));
+        assert_eq!(
+            roots.global_skill_root(ClientKind::Codex),
+            PathBuf::from("/tmp/home/.codex/skills")
+        );
+        assert_eq!(
+            roots.global_skill_root(ClientKind::Claude),
+            PathBuf::from("/tmp/home/.claude/skills")
+        );
+        assert_eq!(
+            roots.global_skill_root(ClientKind::Cursor),
+            PathBuf::from("/tmp/home/.cursor/skills")
+        );
     }
 }

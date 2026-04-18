@@ -5,8 +5,9 @@ use serde::Serialize;
 
 use crate::config::AppConfig;
 use crate::error::{CoreError, Result};
-use crate::library::{find_skill, scan_library, SkillEntry};
+use crate::library::{find_skill, scan_library, scan_warehouse, SkillEntry};
 use crate::profile::Profile;
+use crate::targets::{ClientKind, ClientRoots};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -29,6 +30,19 @@ pub struct ApplySelections {
     pub claude_md_source: Option<PathBuf>,
     pub agents_md_source: Option<PathBuf>,
     pub mode: InstallMode,
+}
+
+pub struct GlobalSyncRequest {
+    pub client: ClientKind,
+    pub skill_ids: Vec<u64>,
+    pub mode: InstallMode,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct GlobalSyncReport {
+    pub synced_skill_ids: Vec<u64>,
+    pub invalid_skill_ids: Vec<u64>,
+    pub target_root: PathBuf,
 }
 
 /// Returns true if `path` is allowed as a symlink/copy source: under one of `library_roots`, or equals `extra_allowed`.
@@ -54,6 +68,13 @@ pub fn path_allowed_for_source(
                 if c.starts_with(&r) {
                     return Ok(true);
                 }
+            }
+        }
+    }
+    if cfg.skill_warehouse.is_dir() {
+        if let Ok(r) = fs::canonicalize(&cfg.skill_warehouse) {
+            if c.starts_with(&r) {
+                return Ok(true);
             }
         }
     }
@@ -105,6 +126,43 @@ pub fn apply_to_project(
         let dest = project_root.join(&profile.agents_md_target);
         apply_one_file(src, &dest, selections.mode)?;
         report.agents_md = Some(dest.display().to_string());
+    }
+
+    Ok(report)
+}
+
+pub fn sync_global_skills(
+    cfg: &AppConfig,
+    roots: &ClientRoots,
+    request: &GlobalSyncRequest,
+) -> Result<GlobalSyncReport> {
+    let entries = scan_warehouse(cfg)?;
+    let target_root = roots.global_skill_root(request.client);
+    fs::create_dir_all(&target_root)?;
+
+    let mut apply_report = ApplyReport::default();
+    let mut report = GlobalSyncReport {
+        target_root,
+        ..GlobalSyncReport::default()
+    };
+
+    for stable_id in &request.skill_ids {
+        let Some(entry) = entries.iter().find(|entry| entry.stable_id == *stable_id) else {
+            report.invalid_skill_ids.push(*stable_id);
+            continue;
+        };
+
+        let dest_dir = report
+            .target_root
+            .join(entry.path.file_name().unwrap_or_default());
+        apply_one_dir(
+            &entry.path,
+            &dest_dir,
+            request.mode,
+            &mut apply_report,
+            &entry.id,
+        )?;
+        report.synced_skill_ids.push(*stable_id);
     }
 
     Ok(report)
