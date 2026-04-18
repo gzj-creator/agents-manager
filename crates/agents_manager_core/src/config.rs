@@ -65,6 +65,7 @@ fn init_dirs() -> Result<()> {
     fs::create_dir_all(config_dir()?)?;
     fs::create_dir_all(profiles_dir()?)?;
     fs::create_dir_all(app_home_dir())?;
+    fs::create_dir_all(default_skill_warehouse())?;
     Ok(())
 }
 
@@ -130,11 +131,13 @@ pub fn load_app_config() -> Result<AppConfig> {
     if cfg.registry_path.as_os_str().is_empty() {
         cfg.registry_path = default_registry_path();
     }
+    fs::create_dir_all(&cfg.skill_warehouse)?;
     Ok(cfg)
 }
 
 pub fn save_app_config(cfg: &AppConfig) -> Result<()> {
     init_dirs()?;
+    fs::create_dir_all(&cfg.skill_warehouse)?;
     let path = config_file_path()?;
     let s = toml::to_string_pretty(cfg)?;
     fs::write(path, s)?;
