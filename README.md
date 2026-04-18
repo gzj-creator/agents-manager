@@ -2,7 +2,7 @@
 
 管理 `skills`、`CLAUDE.md`、`AGENTS.md` 的本地工具，提供：
 
-- Rust 核心库（扫描、应用、doctor）
+- Rust 核心库（warehouse、迁移、同步、init-project）
 - CLI：`agents-manager`
 - Tauri 2 桌面 GUI
 
@@ -17,33 +17,40 @@
 
 ```bash
 cargo run -p agents_manager_cli -- library scan
-cargo run -p agents_manager_cli -- profile list
-cargo run -p agents_manager_cli -- profile upsert \
-  --id claude \
-  --project-skill-root .claude/skills \
-  --claude-md-target CLAUDE.md \
-  --agents-md-target AGENTS.md
-
-cargo run -p agents_manager_cli -- config show
-cargo run -p agents_manager_cli -- config set-library-roots \
-  --roots ~/.agents/skills,~/.codex/skills \
-  --default-profile claude
-
-cargo run -p agents_manager_cli -- apply \
-  --project . \
-  --profile claude \
-  --skills skillA,skillB \
-  --claude-md /abs/CLAUDE.md \
-  --agents-md /abs/AGENTS.md
-
-cargo run -p agents_manager_cli -- doctor --project . --profile claude
+cargo run -p agents_manager_cli -- migrate-legacy-skills
+cargo run -p agents_manager_cli -- init-project \
+  --client codex \
+  --skills 1,2,3
 ```
 
-`apply` 默认 `symlink`，可用 `--mode copy`。
+`library scan` 只扫描 `~/.agents-manager/skills`。
+
+`migrate-legacy-skills` 会把 `~/.codex/skills` 和 `~/.claude/skills` 中的旧 skill 迁移进 warehouse。
+
+`init-project` 默认 `symlink`，可用 `--mode copy`。
+
+旧的 `profile` / `apply` / `doctor` CLI 仍保留，但不再是主工作流。
 
 ## Profile 示例
 
-首次运行会在配置目录生成默认 profile（`claude` / `cursor` / `codex`）：
+## Warehouse
+
+统一仓库目录：
+
+- `~/.agents-manager/skills`
+
+registry 元数据保存：
+
+- stable numeric ID
+- `skill_type`
+- `tags`
+- `source_hint`
+
+首次进入新工作流时，应用会执行一次 legacy migration。之后不再自动迁移，但桌面端会提供手动迁移按钮。
+
+## Profile 示例
+
+兼容旧工作流时，首次运行会在配置目录生成默认 profile（`claude` / `cursor` / `codex`）：
 
 - `claude`：`.claude/skills`
 - `cursor`：`.cursor/skills`
@@ -64,8 +71,10 @@ cargo tauri dev --manifest-path src-tauri/Cargo.toml
 
 GUI 支持：
 
-- 扫描并勾选技能
-- 选择/编辑/保存 profile
-- 使用系统目录选择器选择项目目录
-- 填写 `CLAUDE.md` / `AGENTS.md` 来源文件
-- 一键 apply 与 doctor
+- 只浏览 warehouse 中的 skill
+- 对 skill 做分组、标签筛选和搜索
+- 编辑整个 skill 目录中的文本文件
+- 编辑 registry 中的 `type` / `tags`
+- 手动迁移现有 Codex / Claude skill
+- 同步 warehouse skill 到客户端目录
+- 生成 `init-project` 命令
