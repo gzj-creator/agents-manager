@@ -60,11 +60,40 @@ pub fn init_project(
     Ok(report)
 }
 
+pub fn generate_init_project_command(
+    client: ClientKind,
+    skill_ids: &[u64],
+    mode: Option<&str>,
+) -> String {
+    let joined_ids = skill_ids
+        .iter()
+        .map(u64::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut command = format!(
+        "agents-manager init-project --client {} --skills {}",
+        client_name(client),
+        joined_ids
+    );
+    if matches!(mode, Some("copy")) {
+        command.push_str(" --mode copy");
+    }
+    command
+}
+
 fn project_layout(client: ClientKind) -> (&'static str, &'static str) {
     match client {
         ClientKind::Codex => (".codex/skills", "AGENTS.md"),
         ClientKind::Claude => (".claude/skills", "CLAUDE.md"),
         ClientKind::Cursor => (".cursor/skills", "AGENTS.md"),
+    }
+}
+
+fn client_name(client: ClientKind) -> &'static str {
+    match client {
+        ClientKind::Codex => "codex",
+        ClientKind::Claude => "claude",
+        ClientKind::Cursor => "cursor",
     }
 }
 

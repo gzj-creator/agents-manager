@@ -8,7 +8,7 @@ mod tests {
     use crate::{
         apply_to_project, bootstrap_legacy_migration, doctor, load_skill_registry,
         init_project, scan_warehouse, save_skill_registry, AppConfig, ApplySelections, ClientKind,
-        ClientRoots, InitMode, InstallMode, Profile, RegistrySkill, SkillRegistry,
+        ClientRoots, InitMode, InstallMode, Profile, RegistrySkill, SkillEntry, SkillRegistry,
     };
 
     struct TestCtx {
@@ -272,5 +272,24 @@ mod tests {
         assert!(ctx.project.join(".codex").exists());
         assert!(ctx.project.join("AGENTS.md").exists());
         assert_eq!(report.invalid_skill_ids.len(), 0);
+    }
+
+    #[test]
+    fn warehouse_entries_serialize_metadata_fields() {
+        let entry = SkillEntry {
+            stable_id: 1,
+            id: "alpha".into(),
+            name: Some("Alpha".into()),
+            description: Some("test".into()),
+            skill_type: Some("workflow".into()),
+            tags: vec!["rust".into()],
+            source_hint: Some("codex".into()),
+            path: PathBuf::from("/tmp/alpha"),
+            skill_md_path: PathBuf::from("/tmp/alpha/SKILL.md"),
+        };
+        let json = serde_json::to_value(entry).unwrap();
+        assert_eq!(json["stable_id"], 1);
+        assert_eq!(json["skill_type"], "workflow");
+        assert_eq!(json["tags"][0], "rust");
     }
 }

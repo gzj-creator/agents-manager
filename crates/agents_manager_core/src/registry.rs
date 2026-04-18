@@ -101,3 +101,23 @@ pub fn reconcile_registry(
     save_skill_registry(cfg, &registry)?;
     Ok(registry)
 }
+
+pub fn update_skill_metadata(
+    cfg: &AppConfig,
+    stable_id: u64,
+    skill_type: Option<String>,
+    tags: Vec<String>,
+) -> Result<RegistrySkill> {
+    let mut registry = load_skill_registry(cfg)?;
+    let skill = registry
+        .skills
+        .iter_mut()
+        .find(|skill| skill.stable_id == stable_id)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "skill not found"))?;
+
+    skill.skill_type = skill_type.filter(|value| !value.trim().is_empty());
+    skill.tags = tags;
+    let updated = skill.clone();
+    save_skill_registry(cfg, &registry)?;
+    Ok(updated)
+}

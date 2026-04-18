@@ -15,6 +15,9 @@ pub struct SkillEntry {
     pub id: String,
     pub name: Option<String>,
     pub description: Option<String>,
+    pub skill_type: Option<String>,
+    pub tags: Vec<String>,
+    pub source_hint: Option<String>,
     pub path: PathBuf,
     pub skill_md_path: PathBuf,
 }
@@ -45,6 +48,22 @@ pub fn scan_warehouse(cfg: &AppConfig) -> Result<Vec<SkillEntry>> {
             id: entry.id,
             name: entry.name,
             description: entry.description,
+            skill_type: registry
+                .skills
+                .iter()
+                .find(|skill| skill.path == entry.path)
+                .and_then(|skill| skill.skill_type.clone()),
+            tags: registry
+                .skills
+                .iter()
+                .find(|skill| skill.path == entry.path)
+                .map(|skill| skill.tags.clone())
+                .unwrap_or_default(),
+            source_hint: registry
+                .skills
+                .iter()
+                .find(|skill| skill.path == entry.path)
+                .and_then(|skill| skill.source_hint.clone()),
             path: entry.path,
             skill_md_path: entry.skill_md_path,
         });
@@ -94,6 +113,9 @@ fn scan_roots(roots: &[PathBuf], stable_id: u64) -> Result<Vec<SkillEntry>> {
                 id: basename.clone(),
                 name: meta.name,
                 description: meta.description,
+                skill_type: None,
+                tags: Vec::new(),
+                source_hint: None,
                 path,
                 skill_md_path,
             });
@@ -108,6 +130,9 @@ fn scan_roots(roots: &[PathBuf], stable_id: u64) -> Result<Vec<SkillEntry>> {
                     id,
                     name: meta.name,
                     description: meta.description,
+                    skill_type: None,
+                    tags: Vec::new(),
+                    source_hint: None,
                     path,
                     skill_md_path,
                 });

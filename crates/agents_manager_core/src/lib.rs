@@ -20,11 +20,12 @@ pub use config::{
 };
 pub use doctor::{doctor, DoctorReport, PolicyWarning};
 pub use error::{CoreError, Result};
-pub use init_project::{init_project, InitMode, InitProjectReport};
+pub use init_project::{generate_init_project_command, init_project, InitMode, InitProjectReport};
 pub use library::{find_skill, scan_library, scan_warehouse, SkillEntry};
 pub use migration::{bootstrap_legacy_migration, migrate_legacy_skills, MigrationReport};
 pub use profile::{list_profiles, load_profile, save_profile, Profile};
 pub use registry::{
-    load_skill_registry, reconcile_registry, save_skill_registry, RegistrySkill, SkillRegistry,
+    load_skill_registry, reconcile_registry, save_skill_registry, update_skill_metadata,
+    RegistrySkill, SkillRegistry,
 };
 pub use targets::{ClientKind, ClientRoots};
