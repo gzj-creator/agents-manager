@@ -11,6 +11,7 @@ use crate::error::Result;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SkillEntry {
+    pub stable_id: u64,
     pub id: String,
     pub name: Option<String>,
     pub description: Option<String>,
@@ -20,8 +21,41 @@ pub struct SkillEntry {
 
 /// Scan all `library_roots` for directories containing `SKILL.md`.
 pub fn scan_library(cfg: &AppConfig) -> Result<Vec<SkillEntry>> {
+    scan_roots(&cfg.library_roots, 0)
+}
+
+pub fn scan_warehouse(cfg: &AppConfig) -> Result<Vec<SkillEntry>> {
+    let discovered = discover_skill_paths(&cfg.skill_warehouse)?;
+    let pairs: Vec<(String, PathBuf)> = discovered
+        .iter()
+        .map(|entry| (entry.id.clone(), entry.path.clone()))
+        .collect();
+    let registry = crate::registry::reconcile_registry(cfg, &pairs)?;
+
+    let mut out = Vec::new();
+    for entry in discovered {
+        let stable_id = registry
+            .skills
+            .iter()
+            .find(|skill| skill.path == entry.path)
+            .map(|skill| skill.stable_id)
+            .unwrap_or(0);
+        out.push(SkillEntry {
+            stable_id,
+            id: entry.id,
+            name: entry.name,
+            description: entry.description,
+            path: entry.path,
+            skill_md_path: entry.skill_md_path,
+        });
+    }
+    out.sort_by(|a, b| a.stable_id.cmp(&b.stable_id).then_with(|| a.id.cmp(&b.id)));
+    Ok(out)
+}
+
+fn scan_roots(roots: &[PathBuf], stable_id: u64) -> Result<Vec<SkillEntry>> {
     let mut by_basename: HashMap<String, Vec<PathBuf>> = HashMap::new();
-    for root in &cfg.library_roots {
+    for root in roots {
         if !root.is_dir() {
             continue;
         }
@@ -56,6 +90,7 @@ pub fn scan_library(cfg: &AppConfig) -> Result<Vec<SkillEntry>> {
             let meta = read_skill_frontmatter(&path.join("SKILL.md"))?;
             let skill_md_path = path.join("SKILL.md");
             out.push(SkillEntry {
+                stable_id,
                 id: basename.clone(),
                 name: meta.name,
                 description: meta.description,
@@ -69,6 +104,7 @@ pub fn scan_library(cfg: &AppConfig) -> Result<Vec<SkillEntry>> {
                 let meta = read_skill_frontmatter(&path.join("SKILL.md"))?;
                 let skill_md_path = path.join("SKILL.md");
                 out.push(SkillEntry {
+                    stable_id,
                     id,
                     name: meta.name,
                     description: meta.description,
@@ -80,6 +116,14 @@ pub fn scan_library(cfg: &AppConfig) -> Result<Vec<SkillEntry>> {
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn discover_skill_paths(root: &Path) -> Result<Vec<SkillEntry>> {
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    scan_roots(&[root.to_path_buf()], 0)
 }
 
 fn short_hash(s: &str) -> String {

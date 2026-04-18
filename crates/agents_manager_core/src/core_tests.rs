@@ -3,11 +3,46 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use tempfile::tempdir;
+    use tempfile::{tempdir, TempDir};
 
     use crate::{
-        apply_to_project, doctor, AppConfig, ApplySelections, InstallMode, Profile, SkillRegistry,
+        apply_to_project, doctor, scan_warehouse, AppConfig, ApplySelections, InstallMode, Profile,
+        SkillRegistry,
     };
+
+    struct TestCtx {
+        _tmp: TempDir,
+        cfg: AppConfig,
+        project: PathBuf,
+    }
+
+    impl TestCtx {
+        fn new() -> Self {
+            let tmp = tempdir().unwrap();
+            let warehouse = tmp.path().join("warehouse");
+            let project = tmp.path().join("project");
+            fs::create_dir_all(&warehouse).unwrap();
+            fs::create_dir_all(&project).unwrap();
+            Self {
+                cfg: AppConfig {
+                    skill_warehouse: warehouse,
+                    registry_path: tmp.path().join("registry.toml"),
+                    library_roots: Vec::new(),
+                    default_profile: Some("claude".into()),
+                },
+                project,
+                _tmp: tmp,
+            }
+        }
+
+        fn create_skill(&self, name: &str) {
+            setup_skill(&self.cfg.skill_warehouse, name);
+        }
+
+        fn remove_skill(&self, name: &str) {
+            fs::remove_dir_all(self.cfg.skill_warehouse.join(name)).unwrap();
+        }
+    }
 
     fn setup_skill(root: &std::path::Path, name: &str) {
         let d = root.join(name);
@@ -104,5 +139,23 @@ mod tests {
         let reg = SkillRegistry::default();
         assert_eq!(reg.next_id, 1);
         assert!(reg.skills.is_empty());
+    }
+
+    #[test]
+    fn warehouse_scan_assigns_stable_non_reused_ids() {
+        let ctx = TestCtx::new();
+        ctx.create_skill("alpha");
+        ctx.create_skill("beta");
+
+        let first = scan_warehouse(&ctx.cfg).unwrap();
+        assert_eq!(first[0].stable_id, 1);
+        assert_eq!(first[1].stable_id, 2);
+
+        ctx.remove_skill("alpha");
+        ctx.create_skill("gamma");
+
+        let second = scan_warehouse(&ctx.cfg).unwrap();
+        assert!(second.iter().any(|e| e.id == "beta" && e.stable_id == 2));
+        assert!(second.iter().any(|e| e.id == "gamma" && e.stable_id == 3));
     }
 }

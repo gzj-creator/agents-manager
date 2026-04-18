@@ -14,6 +14,8 @@ pub use config::{
 };
 pub use doctor::{doctor, DoctorReport, PolicyWarning};
 pub use error::{CoreError, Result};
-pub use library::{find_skill, scan_library, SkillEntry};
+pub use library::{find_skill, scan_library, scan_warehouse, SkillEntry};
 pub use profile::{list_profiles, load_profile, save_profile, Profile};
-pub use registry::{load_skill_registry, save_skill_registry, RegistrySkill, SkillRegistry};
+pub use registry::{
+    load_skill_registry, reconcile_registry, save_skill_registry, RegistrySkill, SkillRegistry,
+};

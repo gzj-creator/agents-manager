@@ -58,3 +58,37 @@ pub fn save_skill_registry(cfg: &AppConfig, registry: &SkillRegistry) -> Result<
     fs::write(&cfg.registry_path, raw)?;
     Ok(())
 }
+
+pub fn reconcile_registry(
+    cfg: &AppConfig,
+    discovered: &[(String, PathBuf)],
+) -> Result<SkillRegistry> {
+    let mut registry = load_skill_registry(cfg)?;
+
+    for skill in &mut registry.skills {
+        skill.active = false;
+    }
+
+    for (id, path) in discovered {
+        if let Some(existing) = registry.skills.iter_mut().find(|skill| skill.path == *path) {
+            existing.id = id.clone();
+            existing.path = path.clone();
+            existing.active = true;
+            continue;
+        }
+
+        registry.skills.push(RegistrySkill {
+            stable_id: registry.next_id,
+            id: id.clone(),
+            path: path.clone(),
+            active: true,
+        });
+        registry.next_id += 1;
+    }
+
+    registry
+        .skills
+        .sort_by(|left, right| left.stable_id.cmp(&right.stable_id));
+    save_skill_registry(cfg, &registry)?;
+    Ok(registry)
+}
