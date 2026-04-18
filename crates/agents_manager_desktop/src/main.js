@@ -1,32 +1,56 @@
 import './styles.css'
 import { invoke } from '@tauri-apps/api/core'
 import {
+  collectKnownTags,
   createActionState,
   createAppShellHtml,
+  createEditorState,
+  filterSkills,
   formatOutputPayload,
-  formatSkillsCountLabel,
   nextActionState,
-  renderSkillsHtml,
-  validateProfileForm,
-  validateProjectAction
+  nextEditorState,
+  renderMigrationSummary,
+  renderSkillGroupsHtml,
+  renderTagOptionsHtml,
+  renderTreeHtml
 } from './ui.js'
 
 const app = document.getElementById('app')
-const ACTION_BUTTON_IDS = ['refresh', 'reloadProfiles', 'pickProject', 'saveProfile', 'apply', 'doctor']
-const BUSY_BUTTON_LABELS = {
-  refresh: '刷新中…',
-  reloadProfiles: '同步中…',
-  pickProject: '选择中…',
-  saveProfile: '保存中…',
-  apply: '应用中…',
-  doctor: '执行中…'
-}
+
 const state = {
-  action: createActionState()
+  action: createActionState(),
+  skills: [],
+  filters: {
+    query: '',
+    tag: ''
+  },
+  selectedSkillId: null,
+  tree: null,
+  selectedPath: '',
+  editor: createEditorState(),
+  migrationResult: null
 }
+
+const ACTION_BUTTON_IDS = [
+  'refresh',
+  'saveFile',
+  'saveMetadata',
+  'migrate',
+  'syncSkills',
+  'generateCommand',
+  'createFile',
+  'createFolder',
+  'renamePath',
+  'deletePath'
+]
 
 function renderBase() {
   app.innerHTML = createAppShellHtml()
+}
+
+function transitionAction(event) {
+  state.action = nextActionState(state.action, event)
+  syncActionUi()
 }
 
 function syncActionUi() {
@@ -37,48 +61,34 @@ function syncActionUi() {
 
   ACTION_BUTTON_IDS.forEach(id => {
     const button = document.getElementById(id)
-    if (!button) {
-      return
+    if (button) {
+      button.disabled = state.action.busy
     }
-
-    button.dataset.label ||= button.textContent
-    const busy = state.action.busy && state.action.activeAction === id
-    button.disabled = state.action.busy
-    button.classList.toggle('is-busy', busy)
-    button.textContent = busy ? BUSY_BUTTON_LABELS[id] || '处理中…' : button.dataset.label
   })
+
+  const saveFile = document.getElementById('saveFile')
+  if (saveFile) {
+    saveFile.disabled = state.action.busy || !state.editor.path || !state.editor.dirty
+  }
+
+  const saveMetadata = document.getElementById('saveMetadata')
+  if (saveMetadata) {
+    saveMetadata.disabled = state.action.busy || !state.selectedSkillId
+  }
 }
 
-function transitionAction(event) {
-  state.action = nextActionState(state.action, event)
-  syncActionUi()
-}
-
-function selectedSkills() {
-  return [...document.querySelectorAll('input[data-skill]:checked')].map(i => i.value)
-}
-
-function updateSkillsSummary() {
-  document.getElementById('skillsCount').textContent = formatSkillsCountLabel(selectedSkills().length)
-}
-
-function print(obj, tone = 'info') {
+function print(payload, tone = 'info') {
   const output = document.getElementById('output')
-  const payload = formatOutputPayload(obj, tone)
-  output.dataset.tone = payload.tone
-  output.textContent = payload.text
-  output.scrollTop = 0
+  const formatted = formatOutputPayload(payload, tone)
+  output.dataset.tone = formatted.tone
+  output.textContent = formatted.text
 }
 
 async function runAction(action, task) {
   transitionAction({ type: 'start', action })
-
   try {
     const result = await task()
     transitionAction({ type: 'success', action })
-    if (result !== undefined && result !== null) {
-      print(result, 'success')
-    }
     return result
   } catch (error) {
     transitionAction({ type: 'error', action })
@@ -87,117 +97,326 @@ async function runAction(action, task) {
   }
 }
 
-function setProfileForm(p) {
-  document.getElementById('profileId').value = p?.id || ''
-  document.getElementById('profileSkillRoot').value = p?.project_skill_root || ''
-  document.getElementById('profileClaudeTarget').value = p?.claude_md_target || 'CLAUDE.md'
-  document.getElementById('profileAgentsTarget').value = p?.agents_md_target || 'AGENTS.md'
+function filteredSkills() {
+  return filterSkills(state.skills, state.filters)
 }
 
-async function loadProfiles() {
-  const data = await invoke('list_profiles_cmd')
-  const sel = document.getElementById('profile')
-  const preferredId = sel.value
-  sel.innerHTML = data.map(p => `<option value="${p.id}">${p.id}</option>`).join('')
-  const selected = data.find(p => p.id === preferredId) || data[0]
-  if (selected) {
-    sel.value = selected.id
-    setProfileForm(selected)
-  }
+function selectedSkill() {
+  return state.skills.find(skill => skill.stable_id === state.selectedSkillId) || null
+}
 
-  sel.onchange = () => {
-    const p = data.find(x => x.id === sel.value)
-    setProfileForm(p)
-  }
+function syncNavigator() {
+  document.getElementById('skillList').innerHTML = renderSkillGroupsHtml(
+    filteredSkills(),
+    state.selectedSkillId
+  )
+  document.getElementById('tagFilter').innerHTML = renderTagOptionsHtml(
+    collectKnownTags(state.skills),
+    state.filters.tag
+  )
+}
+
+function syncTree() {
+  document.getElementById('skillTree').innerHTML = renderTreeHtml(state.tree, state.selectedPath)
+}
+
+function syncEditor() {
+  const title = document.getElementById('editorTitle')
+  const editor = document.getElementById('editorInput')
+  const skill = selectedSkill()
+
+  title.textContent = skill ? `${skill.name || skill.id} · Files` : 'Skill Files'
+  editor.value = state.editor.value
+  editor.placeholder = state.editor.path ? '' : '选择文本文件后开始编辑'
+
+  document.getElementById('skillStableId').textContent = skill ? `#${skill.stable_id}` : '-'
+  document.getElementById('skillType').value = skill?.skill_type || ''
+  document.getElementById('skillTags').value = (skill?.tags || []).join(', ')
+  document.getElementById('migrationResult').innerHTML = renderMigrationSummary(state.migrationResult)
+}
+
+function syncAll() {
+  syncActionUi()
+  syncNavigator()
+  syncTree()
+  syncEditor()
 }
 
 async function loadSkills() {
-  const selected = selectedSkills()
-  const data = await invoke('scan_library_cmd')
-  const node = document.getElementById('skills')
-  node.innerHTML = renderSkillsHtml(data, selected)
-  updateSkillsSummary()
+  const data = await invoke('list_warehouse_skills_cmd')
+  state.skills = data
+
+  if (!state.selectedSkillId && data.length) {
+    state.selectedSkillId = data[0].stable_id
+  }
+
+  if (state.selectedSkillId && !data.some(skill => skill.stable_id === state.selectedSkillId)) {
+    state.selectedSkillId = data[0]?.stable_id ?? null
+  }
+
+  syncNavigator()
+
+  if (state.selectedSkillId) {
+    await loadTree(state.selectedSkillId)
+  } else {
+    state.tree = null
+    state.selectedPath = ''
+    state.editor = createEditorState()
+  }
 }
 
-async function apply() {
+async function loadTree(stableId) {
+  const tree = await invoke('inspect_skill_tree_cmd', { stableId })
+  state.tree = tree
+
+  const skill = state.skills.find(entry => entry.stable_id === stableId)
+  const defaultPath = skill?.skill_md_path
+    ? skill.skill_md_path.split('/').pop()
+    : ''
+
+  if (defaultPath && findTreePath(tree, defaultPath)) {
+    await openFile(defaultPath)
+  } else {
+    state.selectedPath = ''
+    state.editor = createEditorState()
+  }
+
+  syncTree()
+  syncEditor()
+}
+
+function findTreePath(node, target) {
+  if (!node) {
+    return false
+  }
+  if (node.path === target) {
+    return true
+  }
+  return (node.children || []).some(child => findTreePath(child, target))
+}
+
+async function openFile(relativePath) {
+  if (!state.selectedSkillId) {
+    return
+  }
+
+  const content = await invoke('read_skill_file_cmd', {
+    req: {
+      stable_id: state.selectedSkillId,
+      relative_path: relativePath
+    }
+  })
+  state.selectedPath = relativePath
+  state.editor = nextEditorState(state.editor, {
+    type: 'load',
+    path: relativePath,
+    value: content
+  })
+  syncTree()
+  syncEditor()
+}
+
+async function saveMetadata() {
   const req = {
-    project: document.getElementById('project').value,
-    profile: document.getElementById('profile').value,
-    skills: selectedSkills(),
-    claude_md: document.getElementById('claudeMd').value || null,
-    agents_md: document.getElementById('agentsMd').value || null,
-    mode: 'symlink'
+    stable_id: state.selectedSkillId,
+    skill_type: document.getElementById('skillType').value.trim() || null,
+    tags: document
+      .getElementById('skillTags')
+      .value
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(Boolean)
   }
-
-  const errors = validateProjectAction(req)
-  if (errors.length > 0) {
-    throw new Error(errors.join('\n'))
+  const updated = await invoke('update_skill_metadata_cmd', { req })
+  const index = state.skills.findIndex(skill => skill.stable_id === updated.stable_id)
+  if (index >= 0) {
+    state.skills[index] = { ...state.skills[index], ...updated }
   }
-
-  return invoke('apply_cmd', { req })
+  syncAll()
+  print(updated, 'success')
 }
 
-async function runDoctor() {
-  const project = document.getElementById('project').value
-  const profile = document.getElementById('profile').value
-
-  const errors = validateProjectAction({ project })
-  if (errors.length > 0) {
-    throw new Error(errors.join('\n'))
+async function saveFile() {
+  if (!state.selectedSkillId || !state.editor.path) {
+    throw new Error('请选择一个文件')
   }
 
-  return invoke('doctor_cmd', { project, profile })
+  await invoke('write_skill_file_cmd', {
+    req: {
+      stable_id: state.selectedSkillId,
+      relative_path: state.editor.path,
+      content: state.editor.value
+    }
+  })
+  state.editor = nextEditorState(state.editor, { type: 'saved' })
+  syncActionUi()
+  print({ saved: state.editor.path }, 'success')
 }
 
-async function pickProject() {
-  const path = await invoke('pick_project_dir_cmd')
-  if (path) {
-    document.getElementById('project').value = path
+async function createPath(kind) {
+  if (!state.selectedSkillId) {
+    throw new Error('请先选择一个 skill')
   }
+  const relativePath = window.prompt(kind === 'dir' ? '输入新文件夹路径' : '输入新文件路径')
+  if (!relativePath) {
+    return
+  }
+  await invoke('create_skill_path_cmd', {
+    req: {
+      stable_id: state.selectedSkillId,
+      relative_path: relativePath,
+      kind
+    }
+  })
+  await loadTree(state.selectedSkillId)
+  print({ created: relativePath, kind }, 'success')
 }
 
-async function saveProfile() {
-  const req = {
-    id: document.getElementById('profileId').value.trim(),
-    project_skill_root: document.getElementById('profileSkillRoot').value.trim(),
-    claude_md_target: document.getElementById('profileClaudeTarget').value.trim() || 'CLAUDE.md',
-    agents_md_target: document.getElementById('profileAgentsTarget').value.trim() || 'AGENTS.md'
+async function renamePath() {
+  if (!state.selectedSkillId || !state.selectedPath) {
+    throw new Error('请先选择一个路径')
+  }
+  const to = window.prompt('输入新的相对路径', state.selectedPath)
+  if (!to || to === state.selectedPath) {
+    return
+  }
+  await invoke('rename_skill_path_cmd', {
+    req: {
+      stable_id: state.selectedSkillId,
+      from: state.selectedPath,
+      to
+    }
+  })
+  state.selectedPath = ''
+  state.editor = createEditorState()
+  await loadTree(state.selectedSkillId)
+  print({ renamed: to }, 'success')
+}
+
+async function deletePath() {
+  if (!state.selectedSkillId || !state.selectedPath) {
+    throw new Error('请先选择一个路径')
+  }
+  const confirmed = window.confirm(`删除 ${state.selectedPath} ?`)
+  if (!confirmed) {
+    return
+  }
+  await invoke('delete_skill_path_cmd', {
+    req: {
+      stable_id: state.selectedSkillId,
+      relative_path: state.selectedPath
+    }
+  })
+  state.selectedPath = ''
+  state.editor = createEditorState()
+  await loadTree(state.selectedSkillId)
+  print({ deleted: true }, 'success')
+}
+
+async function migrateSkills() {
+  const result = await invoke('migrate_legacy_skills_cmd')
+  state.migrationResult = result
+  await loadSkills()
+  syncEditor()
+  print(result, 'success')
+}
+
+async function syncSkills() {
+  if (!state.selectedSkillId) {
+    throw new Error('请先选择一个 skill')
   }
 
-  const errors = validateProfileForm(req)
-  if (errors.length > 0) {
-    throw new Error(errors.join('\n'))
+  const result = await invoke('sync_global_skills_cmd', {
+    req: {
+      client: document.getElementById('clientSelect').value,
+      skill_ids: [state.selectedSkillId],
+      mode: document.getElementById('modeSelect').value
+    }
+  })
+  print(result, 'success')
+}
+
+async function generateCommand() {
+  if (!state.selectedSkillId) {
+    throw new Error('请先选择一个 skill')
   }
 
-  const saved = await invoke('save_profile_cmd', { req })
-  await loadProfiles()
-  document.getElementById('profile').value = saved.id
-  setProfileForm(saved)
-  return saved
+  const command = await invoke('generate_init_project_command_cmd', {
+    req: {
+      client: document.getElementById('clientSelect').value,
+      skill_ids: [state.selectedSkillId],
+      mode: document.getElementById('modeSelect').value
+    }
+  })
+  document.getElementById('generatedCommand').value = command
+  print(command, 'success')
+}
+
+function bindEvents() {
+  document.getElementById('searchInput').addEventListener('input', event => {
+    state.filters.query = event.target.value
+    syncNavigator()
+  })
+
+  document.getElementById('tagFilter').addEventListener('change', event => {
+    state.filters.tag = event.target.value
+    syncNavigator()
+  })
+
+  document.getElementById('skillList').addEventListener('click', event => {
+    const button = event.target.closest('[data-skill-id]')
+    if (!button) {
+      return
+    }
+    state.selectedSkillId = Number(button.dataset.skillId)
+    runAction('loadTree', () => loadTree(state.selectedSkillId))
+  })
+
+  document.getElementById('skillTree').addEventListener('click', event => {
+    const button = event.target.closest('[data-tree-path]')
+    if (!button) {
+      return
+    }
+    const path = button.dataset.treePath
+    const kind = button.dataset.treeKind
+    state.selectedPath = path
+    syncTree()
+    if (kind === 'file') {
+      runAction('loadTree', () => openFile(path))
+    }
+  })
+
+  document.getElementById('editorInput').addEventListener('input', event => {
+    state.editor = nextEditorState(state.editor, {
+      type: 'edit',
+      value: event.target.value
+    })
+    syncActionUi()
+  })
+
+  document.getElementById('refresh').addEventListener('click', () => runAction('refresh', loadSkills))
+  document.getElementById('saveMetadata').addEventListener('click', () => runAction('saveMetadata', saveMetadata))
+  document.getElementById('saveFile').addEventListener('click', () => runAction('saveFile', saveFile))
+  document.getElementById('createFile').addEventListener('click', () => runAction('createPath', () => createPath('file')))
+  document.getElementById('createFolder').addEventListener('click', () => runAction('createPath', () => createPath('dir')))
+  document.getElementById('renamePath').addEventListener('click', () => runAction('renamePath', renamePath))
+  document.getElementById('deletePath').addEventListener('click', () => runAction('deletePath', deletePath))
+  document.getElementById('migrate').addEventListener('click', () => runAction('migrate', migrateSkills))
+  document.getElementById('syncSkills').addEventListener('click', () => runAction('sync', syncSkills))
+  document.getElementById('generateCommand').addEventListener('click', () => runAction('generateCommand', generateCommand))
 }
 
 async function init() {
   renderBase()
-  syncActionUi()
-  updateSkillsSummary()
-  await runAction('bootstrap', async () => {
-    await loadProfiles()
-    await loadSkills()
-  })
+  syncAll()
+  bindEvents()
 
-  document.getElementById('skills').addEventListener('change', event => {
-    if (event.target.matches('input[data-skill]')) {
-      updateSkillsSummary()
-    }
+  await runAction('bootstrap', async () => {
+    await loadSkills()
+    syncAll()
   })
-  document.getElementById('refresh').addEventListener('click', () => runAction('refresh', loadSkills))
-  document.getElementById('reloadProfiles').addEventListener('click', () => runAction('reloadProfiles', loadProfiles))
-  document.getElementById('pickProject').addEventListener('click', () => runAction('pickProject', pickProject))
-  document.getElementById('saveProfile').addEventListener('click', () => runAction('saveProfile', saveProfile))
-  document.getElementById('apply').addEventListener('click', () => runAction('apply', apply))
-  document.getElementById('doctor').addEventListener('click', () => runAction('doctor', runDoctor))
 }
 
-init().catch(e => {
-  app.textContent = String(e)
+init().catch(error => {
+  app.textContent = String(error)
 })
