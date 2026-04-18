@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "agents-manager",
+  "version": "0.1.0",
+  "identifier": "com.gongzhijie.agentsmanager",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "agents-manager",
+        "width": 1000,
+        "height": 760
+      }
+    ]
+  }
+}
