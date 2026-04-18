@@ -13,6 +13,12 @@ pub struct RegistrySkill {
     pub path: PathBuf,
     #[serde(default = "default_true")]
     pub active: bool,
+    #[serde(default)]
+    pub skill_type: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub source_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -82,6 +88,9 @@ pub fn reconcile_registry(
             id: id.clone(),
             path: path.clone(),
             active: true,
+            skill_type: None,
+            tags: Vec::new(),
+            source_hint: None,
         });
         registry.next_id += 1;
     }

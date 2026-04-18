@@ -5,6 +5,7 @@ mod core_tests;
 mod doctor;
 mod error;
 mod library;
+mod migration;
 mod profile;
 mod registry;
 mod targets;
@@ -19,6 +20,7 @@ pub use config::{
 pub use doctor::{doctor, DoctorReport, PolicyWarning};
 pub use error::{CoreError, Result};
 pub use library::{find_skill, scan_library, scan_warehouse, SkillEntry};
+pub use migration::{bootstrap_legacy_migration, migrate_legacy_skills, MigrationReport};
 pub use profile::{list_profiles, load_profile, save_profile, Profile};
 pub use registry::{
     load_skill_registry, reconcile_registry, save_skill_registry, RegistrySkill, SkillRegistry,

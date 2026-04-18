@@ -14,6 +14,8 @@ pub struct AppConfig {
     #[serde(default = "default_registry_path")]
     pub registry_path: PathBuf,
     #[serde(default)]
+    pub bootstrap_migration_done: bool,
+    #[serde(default)]
     pub library_roots: Vec<PathBuf>,
     #[serde(default)]
     pub default_profile: Option<String>,
@@ -24,6 +26,7 @@ impl Default for AppConfig {
         Self {
             skill_warehouse: default_skill_warehouse(),
             registry_path: default_registry_path(),
+            bootstrap_migration_done: false,
             library_roots: Vec::new(),
             default_profile: Some("claude".to_string()),
         }

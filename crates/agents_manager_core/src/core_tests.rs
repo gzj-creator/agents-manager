@@ -6,13 +6,17 @@ mod tests {
     use tempfile::{tempdir, TempDir};
 
     use crate::{
-        apply_to_project, doctor, scan_warehouse, AppConfig, ApplySelections, ClientKind,
-        ClientRoots, InstallMode, Profile, SkillRegistry,
+        apply_to_project, bootstrap_legacy_migration, doctor, load_skill_registry,
+        scan_warehouse, save_skill_registry, AppConfig, ApplySelections, ClientKind, ClientRoots,
+        InstallMode, Profile, RegistrySkill, SkillRegistry,
     };
 
     struct TestCtx {
         _tmp: TempDir,
         cfg: AppConfig,
+        roots: ClientRoots,
+        home: PathBuf,
+        #[allow(dead_code)]
         project: PathBuf,
     }
 
@@ -21,15 +25,20 @@ mod tests {
             let tmp = tempdir().unwrap();
             let warehouse = tmp.path().join("warehouse");
             let project = tmp.path().join("project");
+            let home = tmp.path().join("home");
             fs::create_dir_all(&warehouse).unwrap();
             fs::create_dir_all(&project).unwrap();
+            fs::create_dir_all(&home).unwrap();
             Self {
                 cfg: AppConfig {
                     skill_warehouse: warehouse,
                     registry_path: tmp.path().join("registry.toml"),
+                    bootstrap_migration_done: false,
                     library_roots: Vec::new(),
                     default_profile: Some("claude".into()),
                 },
+                roots: ClientRoots::from_home(&home),
+                home,
                 project,
                 _tmp: tmp,
             }
@@ -41,6 +50,17 @@ mod tests {
 
         fn remove_skill(&self, name: &str) {
             fs::remove_dir_all(self.cfg.skill_warehouse.join(name)).unwrap();
+        }
+
+        fn create_client_skill(&self, client: ClientKind, name: &str, body: &str) {
+            let root = self.roots.global_skill_root(client);
+            let dir = root.join(name);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: test\n---\n{body}"),
+            )
+            .unwrap();
         }
     }
 
@@ -69,6 +89,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse: tmp.path().join("warehouse"),
             registry_path: tmp.path().join("registry.toml"),
+            bootstrap_migration_done: false,
             library_roots: vec![lib.clone()],
             default_profile: Some("claude".into()),
         };
@@ -105,6 +126,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse: tmp.path().join("warehouse"),
             registry_path: tmp.path().join("registry.toml"),
+            bootstrap_migration_done: false,
             library_roots: vec![lib],
             default_profile: Some("claude".into()),
         };
@@ -174,5 +196,60 @@ mod tests {
             roots.global_skill_root(ClientKind::Cursor),
             PathBuf::from("/tmp/home/.cursor/skills")
         );
+    }
+
+    #[test]
+    fn bootstrap_migration_moves_client_skills_into_warehouse_once() {
+        let mut ctx = TestCtx::new();
+        ctx.create_client_skill(ClientKind::Codex, "alpha", "from codex");
+        ctx.create_client_skill(ClientKind::Claude, "beta", "from claude");
+
+        let report = bootstrap_legacy_migration(&mut ctx.cfg, &ctx.roots).unwrap();
+
+        assert!(ctx.cfg.bootstrap_migration_done);
+        assert_eq!(report.imported, 2);
+        assert!(ctx.cfg.skill_warehouse.join("alpha").exists());
+        assert!(ctx.cfg.skill_warehouse.join("beta").exists());
+        assert!(!ctx.home.join(".codex/skills/alpha").exists());
+        assert!(!ctx.home.join(".claude/skills/beta").exists());
+    }
+
+    #[test]
+    fn bootstrap_migration_overwrites_with_later_conflicting_skill() {
+        let mut ctx = TestCtx::new();
+        ctx.create_client_skill(ClientKind::Codex, "shared", "codex body");
+        ctx.create_client_skill(ClientKind::Claude, "shared", "claude body");
+
+        let report = bootstrap_legacy_migration(&mut ctx.cfg, &ctx.roots).unwrap();
+        let skill_md = fs::read_to_string(ctx.cfg.skill_warehouse.join("shared/SKILL.md")).unwrap();
+
+        assert_eq!(report.overwritten, 1);
+        assert!(skill_md.contains("claude body"));
+        assert!(!ctx.home.join(".codex/skills/shared").exists());
+        assert!(!ctx.home.join(".claude/skills/shared").exists());
+    }
+
+    #[test]
+    fn registry_roundtrip_preserves_type_and_tags() {
+        let ctx = TestCtx::new();
+        let registry = SkillRegistry {
+            next_id: 2,
+            skills: vec![RegistrySkill {
+                stable_id: 1,
+                id: "alpha".into(),
+                path: PathBuf::from("alpha"),
+                active: true,
+                skill_type: Some("workflow".into()),
+                tags: vec!["rust".into(), "cli".into()],
+                source_hint: Some("codex".into()),
+            }],
+        };
+
+        save_skill_registry(&ctx.cfg, &registry).unwrap();
+        let loaded = load_skill_registry(&ctx.cfg).unwrap();
+
+        assert_eq!(loaded.skills[0].skill_type.as_deref(), Some("workflow"));
+        assert_eq!(loaded.skills[0].tags, vec!["rust".to_string(), "cli".to_string()]);
+        assert_eq!(loaded.skills[0].source_hint.as_deref(), Some("codex"));
     }
 }
