@@ -4,6 +4,7 @@ mod config;
 mod core_tests;
 mod doctor;
 mod error;
+mod init_project;
 mod library;
 mod migration;
 mod profile;
@@ -19,6 +20,7 @@ pub use config::{
 };
 pub use doctor::{doctor, DoctorReport, PolicyWarning};
 pub use error::{CoreError, Result};
+pub use init_project::{init_project, InitMode, InitProjectReport};
 pub use library::{find_skill, scan_library, scan_warehouse, SkillEntry};
 pub use migration::{bootstrap_legacy_migration, migrate_legacy_skills, MigrationReport};
 pub use profile::{list_profiles, load_profile, save_profile, Profile};

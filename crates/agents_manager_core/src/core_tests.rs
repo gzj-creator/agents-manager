@@ -7,8 +7,8 @@ mod tests {
 
     use crate::{
         apply_to_project, bootstrap_legacy_migration, doctor, load_skill_registry,
-        scan_warehouse, save_skill_registry, AppConfig, ApplySelections, ClientKind, ClientRoots,
-        InstallMode, Profile, RegistrySkill, SkillRegistry,
+        init_project, scan_warehouse, save_skill_registry, AppConfig, ApplySelections, ClientKind,
+        ClientRoots, InitMode, InstallMode, Profile, RegistrySkill, SkillRegistry,
     };
 
     struct TestCtx {
@@ -251,5 +251,26 @@ mod tests {
         assert_eq!(loaded.skills[0].skill_type.as_deref(), Some("workflow"));
         assert_eq!(loaded.skills[0].tags, vec!["rust".to_string(), "cli".to_string()]);
         assert_eq!(loaded.skills[0].source_hint.as_deref(), Some("codex"));
+    }
+
+    #[test]
+    fn init_project_creates_codex_dir_and_agents_md() {
+        let ctx = TestCtx::new();
+        ctx.create_skill("alpha");
+        let scan = scan_warehouse(&ctx.cfg).unwrap();
+        let alpha = scan.iter().find(|s| s.id == "alpha").unwrap();
+
+        let report = init_project(
+            &ctx.project,
+            ClientKind::Codex,
+            vec![alpha.stable_id],
+            InitMode::Symlink,
+            &ctx.cfg,
+        )
+        .unwrap();
+
+        assert!(ctx.project.join(".codex").exists());
+        assert!(ctx.project.join("AGENTS.md").exists());
+        assert_eq!(report.invalid_skill_ids.len(), 0);
     }
 }
