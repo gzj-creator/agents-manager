@@ -2,13 +2,15 @@
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::process::Command;
 
     use tempfile::{tempdir, TempDir};
 
     use crate::{
-        apply_to_project, bootstrap_legacy_migration, doctor, load_skill_registry,
-        init_project, scan_warehouse, save_skill_registry, AppConfig, ApplySelections, ClientKind,
-        ClientRoots, InitMode, InstallMode, Profile, RegistrySkill, SkillEntry, SkillRegistry,
+        apply_to_project, bootstrap_legacy_migration, create_skill, doctor, import_git_skills,
+        init_project, load_skill_registry, save_skill_registry, scan_warehouse, AppConfig,
+        ApplySelections, ClientKind, ClientRoots, CoreError, CreateSkillRequest, InitMode,
+        InstallMode, Profile, RegistrySkill, SkillEntry, SkillRegistry,
     };
 
     struct TestCtx {
@@ -72,6 +74,53 @@ mod tests {
             "---\nname: test\ndescription: test\n---\nbody",
         )
         .unwrap();
+    }
+
+    fn setup_skill_with_body(root: &std::path::Path, relative: &str, body: &str) {
+        let d = root.join(relative);
+        fs::create_dir_all(&d).unwrap();
+        let name = PathBuf::from(relative)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        fs::write(
+            d.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: test\n---\n{body}"),
+        )
+        .unwrap();
+        fs::write(d.join("notes.txt"), body).unwrap();
+    }
+
+    fn init_git_repo(path: &std::path::Path) {
+        let status = Command::new("git")
+            .args(["init"])
+            .current_dir(path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let status = Command::new("git")
+            .args(["add", "."])
+            .current_dir(path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let status = Command::new("git")
+            .args([
+                "-c",
+                "user.name=Test User",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "init",
+            ])
+            .current_dir(path)
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 
     #[test]
@@ -182,6 +231,91 @@ mod tests {
     }
 
     #[test]
+    fn create_skill_creates_directory_without_starter_skill_md() {
+        let ctx = TestCtx::new();
+
+        let created = create_skill(
+            &ctx.cfg,
+            CreateSkillRequest {
+                id: "new-skill".into(),
+                name: Some("New Skill".into()),
+                description: Some("starter description".into()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(created.id, "new-skill");
+        assert!(ctx.cfg.skill_warehouse.join("new-skill").is_dir());
+        assert!(!ctx.cfg.skill_warehouse.join("new-skill/SKILL.md").exists());
+        assert_eq!(created.name, None);
+        assert_eq!(created.description, None);
+    }
+
+    #[test]
+    fn create_skill_returns_error_if_skill_already_exists() {
+        let ctx = TestCtx::new();
+
+        let first = create_skill(
+            &ctx.cfg,
+            CreateSkillRequest {
+                id: "new-skill".into(),
+                name: Some("First Name".into()),
+                description: Some("first description".into()),
+            },
+        )
+        .unwrap();
+        assert_eq!(first.id, "new-skill");
+
+        let err = create_skill(
+            &ctx.cfg,
+            CreateSkillRequest {
+                id: "new-skill".into(),
+                name: Some("Second Name".into()),
+                description: Some("second description".into()),
+            },
+        )
+        .unwrap_err();
+
+        match err {
+            CoreError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists),
+            other => panic!("expected AlreadyExists IO error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scan_warehouse_includes_empty_skill_dirs_and_picks_up_skill_md_later() {
+        let ctx = TestCtx::new();
+
+        let created = create_skill(
+            &ctx.cfg,
+            CreateSkillRequest {
+                id: "roundtrip".into(),
+                name: Some("ignored".into()),
+                description: Some("ignored".into()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(created.id, "roundtrip");
+        assert_eq!(created.name, None);
+        assert_eq!(created.description, None);
+
+        fs::write(
+            ctx.cfg.skill_warehouse.join("roundtrip").join("SKILL.md"),
+            "---\nname: Roundtrip\ndescription: imported later\n---\nbody",
+        )
+        .unwrap();
+
+        let rescanned = scan_warehouse(&ctx.cfg).unwrap();
+        let entry = rescanned
+            .iter()
+            .find(|entry| entry.id == "roundtrip")
+            .unwrap();
+        assert_eq!(entry.name.as_deref(), Some("Roundtrip"));
+        assert_eq!(entry.description.as_deref(), Some("imported later"));
+    }
+
+    #[test]
     fn client_global_targets_resolve_expected_paths() {
         let roots = ClientRoots::from_home(std::path::Path::new("/tmp/home"));
         assert_eq!(
@@ -249,7 +383,10 @@ mod tests {
         let loaded = load_skill_registry(&ctx.cfg).unwrap();
 
         assert_eq!(loaded.skills[0].skill_type.as_deref(), Some("workflow"));
-        assert_eq!(loaded.skills[0].tags, vec!["rust".to_string(), "cli".to_string()]);
+        assert_eq!(
+            loaded.skills[0].tags,
+            vec!["rust".to_string(), "cli".to_string()]
+        );
         assert_eq!(loaded.skills[0].source_hint.as_deref(), Some("codex"));
     }
 
@@ -291,5 +428,69 @@ mod tests {
         assert_eq!(json["stable_id"], 1);
         assert_eq!(json["skill_type"], "workflow");
         assert_eq!(json["tags"][0], "rust");
+    }
+
+    #[test]
+    fn git_import_recursively_discovers_nested_skills_and_flattens_ids() {
+        let ctx = TestCtx::new();
+        let repo = tempdir().unwrap();
+        setup_skill_with_body(repo.path(), "foo", "root body");
+        setup_skill_with_body(repo.path(), "prompts/bar", "nested body");
+        init_git_repo(repo.path());
+
+        let report = import_git_skills(&ctx.cfg, repo.path().to_string_lossy().as_ref()).unwrap();
+        let scanned = scan_warehouse(&ctx.cfg).unwrap();
+
+        assert_eq!(report.discovered, 2);
+        assert_eq!(report.imported, 2);
+        assert!(ctx.cfg.skill_warehouse.join("foo/SKILL.md").exists());
+        assert!(ctx.cfg.skill_warehouse.join("prompts-bar/SKILL.md").exists());
+        assert!(scanned.iter().any(|skill| skill.id == "foo"));
+        assert!(scanned.iter().any(|skill| skill.id == "prompts-bar"));
+        let imported = scanned.iter().find(|skill| skill.id == "prompts-bar").unwrap();
+        let expected_source_hint = format!("git:{}#prompts/bar", repo.path().display());
+        assert_eq!(
+            imported.source_hint.as_deref(),
+            Some(expected_source_hint.as_str())
+        );
+    }
+
+    #[test]
+    fn git_import_skips_identical_existing_skill_dirs() {
+        let ctx = TestCtx::new();
+        setup_skill_with_body(&ctx.cfg.skill_warehouse, "foo", "same body");
+
+        let repo = tempdir().unwrap();
+        setup_skill_with_body(repo.path(), "foo", "same body");
+        init_git_repo(repo.path());
+
+        let report = import_git_skills(&ctx.cfg, repo.path().to_string_lossy().as_ref()).unwrap();
+        let contents = fs::read_to_string(ctx.cfg.skill_warehouse.join("foo/SKILL.md")).unwrap();
+
+        assert_eq!(report.discovered, 1);
+        assert_eq!(report.imported, 0);
+        assert_eq!(report.skipped, 1);
+        assert_eq!(report.conflicts, 0);
+        assert!(contents.contains("same body"));
+    }
+
+    #[test]
+    fn git_import_reports_conflict_without_overwriting_existing_skill() {
+        let ctx = TestCtx::new();
+        setup_skill_with_body(&ctx.cfg.skill_warehouse, "foo", "local body");
+
+        let repo = tempdir().unwrap();
+        setup_skill_with_body(repo.path(), "foo", "remote body");
+        init_git_repo(repo.path());
+
+        let report = import_git_skills(&ctx.cfg, repo.path().to_string_lossy().as_ref()).unwrap();
+        let contents = fs::read_to_string(ctx.cfg.skill_warehouse.join("foo/SKILL.md")).unwrap();
+
+        assert_eq!(report.discovered, 1);
+        assert_eq!(report.imported, 0);
+        assert_eq!(report.skipped, 0);
+        assert_eq!(report.conflicts, 1);
+        assert!(contents.contains("local body"));
+        assert!(!contents.contains("remote body"));
     }
 }

@@ -4,9 +4,10 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use agents_manager_core::{
-    bootstrap_legacy_migration, generate_init_project_command, load_app_config, migrate_legacy_skills,
-    save_app_config, scan_warehouse, sync_global_skills, update_skill_metadata, ClientKind,
-    ClientRoots, GlobalSyncRequest, InstallMode,
+    bootstrap_legacy_migration, create_skill, generate_init_project_command, import_git_skills,
+    load_app_config, migrate_legacy_skills, save_app_config, scan_warehouse, sync_global_skills,
+    update_skill_metadata, ClientKind, ClientRoots, CreateSkillRequest, GlobalSyncRequest,
+    InstallMode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +67,18 @@ struct InitCommandReq {
     mode: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GitImportReq {
+    repo_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateSkillReq {
+    id: String,
+    name: Option<String>,
+    description: Option<String>,
+}
+
 #[tauri::command]
 fn list_warehouse_skills_cmd() -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
@@ -74,10 +87,25 @@ fn list_warehouse_skills_cmd() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn create_skill_cmd(req: CreateSkillReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let created = create_skill(
+        &cfg,
+        CreateSkillRequest {
+            id: req.id,
+            name: req.name,
+            description: req.description,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    serde_json::to_value(created).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn update_skill_metadata_cmd(req: UpdateSkillMetadataReq) -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
-    let updated =
-        update_skill_metadata(&cfg, req.stable_id, req.skill_type, req.tags).map_err(|e| e.to_string())?;
+    let updated = update_skill_metadata(&cfg, req.stable_id, req.skill_type, req.tags)
+        .map_err(|e| e.to_string())?;
     serde_json::to_value(updated).map_err(|e| e.to_string())
 }
 
@@ -139,7 +167,8 @@ fn delete_skill_path_cmd(req: SkillPathReq) -> Result<(), String> {
 #[tauri::command]
 fn migrate_legacy_skills_cmd() -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
-    let roots = ClientRoots::detect().ok_or_else(|| "could not resolve home directory".to_string())?;
+    let roots =
+        ClientRoots::detect().ok_or_else(|| "could not resolve home directory".to_string())?;
     let report = migrate_legacy_skills(&cfg, &roots).map_err(|e| e.to_string())?;
     serde_json::to_value(report).map_err(|e| e.to_string())
 }
@@ -147,7 +176,8 @@ fn migrate_legacy_skills_cmd() -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn sync_global_skills_cmd(req: SyncSkillsReq) -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
-    let roots = ClientRoots::detect().ok_or_else(|| "could not resolve home directory".to_string())?;
+    let roots =
+        ClientRoots::detect().ok_or_else(|| "could not resolve home directory".to_string())?;
     let report = sync_global_skills(
         &cfg,
         &roots,
@@ -168,6 +198,13 @@ fn generate_init_project_command_cmd(req: InitCommandReq) -> Result<String, Stri
         &req.skill_ids,
         req.mode.as_deref(),
     ))
+}
+
+#[tauri::command]
+fn import_git_skills_cmd(req: GitImportReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let report = import_git_skills(&cfg, &req.repo_url).map_err(|e| e.to_string())?;
+    serde_json::to_value(report).map_err(|e| e.to_string())
 }
 
 fn parse_client(client: &str) -> Result<ClientKind, String> {
@@ -196,7 +233,10 @@ fn resolve_skill_root(stable_id: u64) -> Result<PathBuf, Box<dyn std::error::Err
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "skill not found").into())
 }
 
-fn resolve_skill_file(stable_id: u64, relative_path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn resolve_skill_file(
+    stable_id: u64,
+    relative_path: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let root = resolve_skill_root(stable_id)?;
     let relative = sanitize_relative_path(relative_path)?;
     Ok(root.join(relative))
@@ -276,6 +316,7 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             list_warehouse_skills_cmd,
+            create_skill_cmd,
             update_skill_metadata_cmd,
             inspect_skill_tree_cmd,
             read_skill_file_cmd,
@@ -284,6 +325,7 @@ fn main() {
             rename_skill_path_cmd,
             delete_skill_path_cmd,
             migrate_legacy_skills_cmd,
+            import_git_skills_cmd,
             sync_global_skills_cmd,
             generate_init_project_command_cmd
         ])

@@ -87,9 +87,8 @@ pub fn apply_to_project(
     cfg: &AppConfig,
     selections: &ApplySelections,
 ) -> Result<ApplyReport> {
-    let project_root = fs::canonicalize(project_root).map_err(|_| {
-        CoreError::InvalidProject(project_root.to_path_buf())
-    })?;
+    let project_root = fs::canonicalize(project_root)
+        .map_err(|_| CoreError::InvalidProject(project_root.to_path_buf()))?;
     if !project_root.is_dir() {
         return Err(CoreError::InvalidProject(project_root.clone()));
     }
@@ -101,8 +100,7 @@ pub fn apply_to_project(
     fs::create_dir_all(&skill_dest_root)?;
 
     for id in &resolve_skill_ids(selections, &entries)? {
-        let entry = find_skill(&entries, id)
-            .ok_or_else(|| CoreError::SkillNotFound(id.clone()))?;
+        let entry = find_skill(&entries, id).ok_or_else(|| CoreError::SkillNotFound(id.clone()))?;
         if !path_allowed_for_source(&entry.path, cfg, &[])? {
             return Err(CoreError::PathNotAllowed(entry.path.clone()));
         }
@@ -168,10 +166,7 @@ pub fn sync_global_skills(
     Ok(report)
 }
 
-fn resolve_skill_ids(
-    selections: &ApplySelections,
-    entries: &[SkillEntry],
-) -> Result<Vec<String>> {
+fn resolve_skill_ids(selections: &ApplySelections, entries: &[SkillEntry]) -> Result<Vec<String>> {
     let mut v = Vec::new();
     for id in &selections.skill_ids {
         if find_skill(entries, id).is_some() {

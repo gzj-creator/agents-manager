@@ -86,8 +86,7 @@ fn walk_skill_tree(
                 } else if !path_allowed_for_source(&resolved, cfg, &[])? {
                     policy_warnings.push(PolicyWarning {
                         path: path.clone(),
-                        detail: "skill symlink target is not under configured library_roots"
-                            .into(),
+                        detail: "skill symlink target is not under configured library_roots".into(),
                     });
                 }
             }

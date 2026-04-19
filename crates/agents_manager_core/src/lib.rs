@@ -2,8 +2,10 @@ mod apply;
 mod config;
 #[cfg(test)]
 mod core_tests;
+mod creation;
 mod doctor;
 mod error;
+mod git_import;
 mod init_project;
 mod library;
 mod migration;
@@ -16,10 +18,13 @@ pub use apply::{
     GlobalSyncReport, GlobalSyncRequest, InstallMode,
 };
 pub use config::{
-    init_config_tree, load_app_config, save_app_config, write_default_profiles_if_missing, AppConfig,
+    init_config_tree, load_app_config, save_app_config, write_default_profiles_if_missing,
+    AppConfig,
 };
+pub use creation::{create_skill, CreateSkillRequest};
 pub use doctor::{doctor, DoctorReport, PolicyWarning};
 pub use error::{CoreError, Result};
+pub use git_import::{import_git_skills, GitImportDetail, GitImportReport};
 pub use init_project::{generate_init_project_command, init_project, InitMode, InitProjectReport};
 pub use library::{find_skill, scan_library, scan_warehouse, SkillEntry};
 pub use migration::{bootstrap_legacy_migration, migrate_legacy_skills, MigrationReport};

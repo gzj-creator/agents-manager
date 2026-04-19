@@ -39,10 +39,7 @@ pub fn migrate_legacy_skills(cfg: &AppConfig, roots: &ClientRoots) -> Result<Mig
     let mut report = MigrationReport::default();
     let mut source_hints = HashMap::new();
 
-    for (client, label) in [
-        (ClientKind::Codex, "codex"),
-        (ClientKind::Claude, "claude"),
-    ] {
+    for (client, label) in [(ClientKind::Codex, "codex"), (ClientKind::Claude, "claude")] {
         let source_root = roots.global_skill_root(client);
         if !source_root.is_dir() {
             continue;
@@ -109,7 +106,10 @@ fn dir_digest(root: &Path) -> Result<String> {
     let mut hasher = Sha256::new();
     let mut files = Vec::new();
 
-    for entry in WalkDir::new(root).into_iter().filter_map(|entry| entry.ok()) {
+    for entry in WalkDir::new(root)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
         if entry.file_type().is_file() {
             files.push(entry.into_path());
         }

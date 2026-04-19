@@ -94,10 +94,7 @@ fn scan_roots(roots: &[PathBuf], stable_id: u64) -> Result<Vec<SkillEntry>> {
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "unknown".to_string());
-            by_basename
-                .entry(base)
-                .or_default()
-                .push(skill_dir);
+            by_basename.entry(base).or_default().push(skill_dir);
         }
     }
 
@@ -148,7 +145,35 @@ fn discover_skill_paths(root: &Path) -> Result<Vec<SkillEntry>> {
         return Ok(Vec::new());
     }
 
-    scan_roots(&[root.to_path_buf()], 0)
+    let mut out = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let id = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "unknown".to_string());
+        let skill_md_path = path.join("SKILL.md");
+        let meta = read_skill_frontmatter(&skill_md_path)?;
+        out.push(SkillEntry {
+            stable_id: 0,
+            id,
+            name: meta.name,
+            description: meta.description,
+            skill_type: None,
+            tags: Vec::new(),
+            source_hint: None,
+            path,
+            skill_md_path,
+        });
+    }
+
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
 }
 
 fn short_hash(s: &str) -> String {

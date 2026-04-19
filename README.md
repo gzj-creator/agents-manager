@@ -110,8 +110,11 @@ GUI 支持：
 - 同步 warehouse skill 到客户端目录
 - 生成 `init-project` 命令
 
-当前桌面工作台包含：
+当前桌面客户端为单窗口分页结构：
 
-- 左侧 grouped skill navigator
-- 中间文件树和文本编辑器
-- 右侧 metadata、迁移、同步和命令生成面板
+- 左侧固定导航：`Skills` / `Editor` / `Sync` / `Migration` / `Settings`
+- `Skills` 页负责分组浏览、搜索和标签筛选
+- `Editor` 页负责文件树、文本编辑和元数据维护
+- `Sync` 页负责客户端同步和 `init-project` 命令生成
+- `Migration` 页负责一次性迁移状态和手动迁移
+- `Settings` 页负责 warehouse、registry 和客户端目录信息
