@@ -48,6 +48,11 @@ fn default_registry_path() -> PathBuf {
 }
 
 pub fn config_dir() -> Result<PathBuf> {
+    if let Some(p) = std::env::var_os("AGENTS_MANAGER_CONFIG_DIR") {
+        if !p.is_empty() {
+            return Ok(PathBuf::from(p));
+        }
+    }
     dirs::config_dir()
         .map(|p| p.join(APP_CONFIG_DIR_NAME))
         .ok_or(CoreError::NoConfigDir)

@@ -8,9 +8,11 @@ mod error;
 mod git_import;
 mod init_project;
 mod library;
+mod mcp;
 mod migration;
 mod profile;
 mod registry;
+mod settings;
 mod targets;
 
 pub use apply::{
@@ -33,4 +35,8 @@ pub use registry::{
     load_skill_registry, reconcile_registry, save_skill_registry, update_skill_metadata,
     RegistrySkill, SkillRegistry,
 };
+pub use settings::{update_editable_settings, EditableSettingsUpdate};
 pub use targets::{ClientKind, ClientRoots};
+pub use mcp::{
+    load_mcp_config, save_mcp_config, McpClient, McpScope, McpServerConfig, McpTarget,
+};
