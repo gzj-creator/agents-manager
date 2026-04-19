@@ -26,6 +26,10 @@ impl ClientRoots {
         dirs::home_dir().as_deref().map(Self::from_home)
     }
 
+    pub fn home_dir(&self) -> &Path {
+        &self.home
+    }
+
     pub fn global_skill_root(&self, client: ClientKind) -> PathBuf {
         match client {
             ClientKind::Codex => self.home.join(".codex").join("skills"),

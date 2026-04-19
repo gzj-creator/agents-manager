@@ -1,20 +1,48 @@
 #[cfg(test)]
 mod tests {
+    use std::env;
     use std::fs;
     use std::path::PathBuf;
     use std::process::Command;
+    use std::sync::Mutex;
 
     use tempfile::{tempdir, TempDir};
 
     use crate::{
         apply_to_project, bootstrap_legacy_migration, create_skill, doctor, import_git_skills,
-        init_project, load_skill_registry, save_skill_registry, scan_warehouse, AppConfig,
-        ApplySelections, ClientKind, ClientRoots, CoreError, CreateSkillRequest, InitMode,
-        InstallMode, Profile, RegistrySkill, SkillEntry, SkillRegistry,
+        init_project, load_mcp_config, load_skill_registry, save_mcp_config,
+        save_skill_registry, scan_warehouse, update_editable_settings, AppConfig,
+        ApplySelections, ClientKind, ClientRoots, CoreError, CreateSkillRequest,
+        EditableSettingsUpdate, InitMode, InstallMode, McpServerConfig, McpTarget, Profile,
+        RegistrySkill, SkillEntry, SkillRegistry,
     };
 
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set<V: AsRef<std::ffi::OsStr>>(key: &'static str, value: V) -> Self {
+            let prev = env::var_os(key);
+            env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match self.prev.take() {
+                Some(v) => env::set_var(self.key, v),
+                None => env::remove_var(self.key),
+            }
+        }
+    }
+
     struct TestCtx {
-        _tmp: TempDir,
+        tmp: TempDir,
         cfg: AppConfig,
         roots: ClientRoots,
         home: PathBuf,
@@ -42,7 +70,7 @@ mod tests {
                 roots: ClientRoots::from_home(&home),
                 home,
                 project,
-                _tmp: tmp,
+                tmp,
             }
         }
 
@@ -203,6 +231,55 @@ mod tests {
         let cfg = AppConfig::default();
         assert!(cfg.library_roots.is_empty());
         assert!(cfg.skill_warehouse.ends_with(".agents-manager/skills"));
+    }
+
+    #[test]
+    fn update_editable_settings_changes_warehouse_and_library_roots_only() {
+        let ctx = TestCtx::new();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvVarGuard::set(
+            "AGENTS_MANAGER_CONFIG_DIR",
+            ctx.tmp.path().join("config-dir").as_os_str(),
+        );
+
+        let next_warehouse = ctx.tmp.path().join("next-warehouse");
+        let next_root = ctx.tmp.path().join("lib-a");
+
+        let updated = update_editable_settings(
+            &ctx.cfg,
+            EditableSettingsUpdate {
+                skill_warehouse: Some(next_warehouse.clone()),
+                library_roots: Some(vec![next_root.clone()]),
+            },
+        )
+        .unwrap();
+
+        let saved_path = crate::config::config_file_path().unwrap();
+        let saved_contents = fs::read_to_string(&saved_path).unwrap();
+        let saved_cfg: AppConfig = toml::from_str(&saved_contents).unwrap();
+
+        assert_eq!(updated.skill_warehouse, next_warehouse);
+        assert_eq!(updated.library_roots, vec![next_root]);
+        assert!(updated.skill_warehouse.is_dir());
+
+        assert!(saved_path.is_file());
+        assert!(saved_contents.contains("next-warehouse"));
+        assert!(saved_contents.contains("lib-a"));
+        assert_eq!(saved_cfg.skill_warehouse, updated.skill_warehouse);
+        assert_eq!(saved_cfg.library_roots, updated.library_roots);
+
+        assert_eq!(updated.registry_path, ctx.cfg.registry_path);
+        assert_eq!(
+            updated.bootstrap_migration_done,
+            ctx.cfg.bootstrap_migration_done
+        );
+        assert_eq!(updated.default_profile, ctx.cfg.default_profile);
+        assert_eq!(saved_cfg.registry_path, ctx.cfg.registry_path);
+        assert_eq!(
+            saved_cfg.bootstrap_migration_done,
+            ctx.cfg.bootstrap_migration_done
+        );
+        assert_eq!(saved_cfg.default_profile, ctx.cfg.default_profile);
     }
 
     #[test]
@@ -492,5 +569,347 @@ mod tests {
         assert_eq!(report.conflicts, 1);
         assert!(contents.contains("local body"));
         assert!(!contents.contains("remote body"));
+    }
+
+    #[test]
+    fn save_cursor_project_mcp_preserves_non_mcp_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path();
+        fs::create_dir_all(project.join(".cursor")).unwrap();
+        fs::write(
+            project.join(".cursor/mcp.json"),
+            r#"{"theme":"warm","mcpServers":{"existing":{"command":"npx","args":["server"]}}}"#,
+        )
+        .unwrap();
+
+        save_mcp_config(
+            &McpTarget::cursor_project(project),
+            vec![McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            )],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(project.join(".cursor/mcp.json")).unwrap();
+        assert!(raw.contains("\"theme\""));
+        assert!(raw.contains("\"better-icons\""));
+        assert!(!raw.contains("\"existing\""));
+
+        let loaded = load_mcp_config(&McpTarget::cursor_project(project)).unwrap();
+        assert_eq!(loaded.servers.len(), 1);
+        assert_eq!(
+            loaded.servers.get("better-icons"),
+            Some(&McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            ))
+        );
+    }
+
+    #[test]
+    fn save_cursor_project_mcp_returns_error_for_existing_invalid_utf8_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path();
+        let config_path = project.join(".cursor/mcp.json");
+        let invalid_bytes = vec![0xff, 0xfe, b'{'];
+        fs::create_dir_all(project.join(".cursor")).unwrap();
+        fs::write(&config_path, &invalid_bytes).unwrap();
+
+        let err = save_mcp_config(
+            &McpTarget::cursor_project(project),
+            vec![McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            )],
+        )
+        .unwrap_err();
+
+        match err {
+            CoreError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::InvalidData),
+            other => panic!("expected invalid data IO error, got {other:?}"),
+        }
+
+        assert_eq!(fs::read(&config_path).unwrap(), invalid_bytes);
+    }
+
+    #[test]
+    fn save_codex_global_mcp_returns_error_for_existing_invalid_utf8_file() {
+        let home = tempfile::tempdir().unwrap();
+        let config_path = home.path().join(".codex/config.toml");
+        let invalid_bytes = vec![0xff, 0xfe, b'['];
+        fs::create_dir_all(home.path().join(".codex")).unwrap();
+        fs::write(&config_path, &invalid_bytes).unwrap();
+
+        let err = save_mcp_config(
+            &McpTarget::codex_global(home.path()),
+            vec![McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            )],
+        )
+        .unwrap_err();
+
+        match err {
+            CoreError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::InvalidData),
+            other => panic!("expected invalid data IO error, got {other:?}"),
+        }
+
+        assert_eq!(fs::read(&config_path).unwrap(), invalid_bytes);
+    }
+
+    #[test]
+    fn save_cursor_global_mcp_preserves_non_mcp_fields() {
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join(".cursor")).unwrap();
+        fs::write(
+            home.path().join(".cursor/mcp.json"),
+            r#"{"theme":"warm","mcpServers":{"existing":{"command":"npx","args":["server"]}}}"#,
+        )
+        .unwrap();
+
+        save_mcp_config(
+            &McpTarget::cursor_global(home.path()),
+            vec![McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            )],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(home.path().join(".cursor/mcp.json")).unwrap();
+        assert!(raw.contains("\"theme\""));
+        assert!(raw.contains("\"better-icons\""));
+        assert!(!raw.contains("\"existing\""));
+
+        let loaded = load_mcp_config(&McpTarget::cursor_global(home.path())).unwrap();
+        assert_eq!(loaded.servers.len(), 1);
+        assert_eq!(
+            loaded.servers.get("better-icons"),
+            Some(&McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            ))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_cursor_project_mcp_returns_error_for_unreadable_existing_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path();
+        let cursor_dir = project.join(".cursor");
+        let config_path = cursor_dir.join("mcp.json");
+        fs::create_dir_all(&cursor_dir).unwrap();
+        fs::write(&config_path, "{}").unwrap();
+
+        let original_mode = fs::metadata(&cursor_dir).unwrap().permissions().mode();
+        fs::set_permissions(&cursor_dir, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = load_mcp_config(&McpTarget::cursor_project(project));
+
+        fs::set_permissions(&cursor_dir, fs::Permissions::from_mode(original_mode)).unwrap();
+
+        let err = result.unwrap_err();
+        match err {
+            CoreError::Io(error) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied)
+            }
+            other => panic!("expected permission denied IO error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn save_codex_global_mcp_preserves_non_mcp_tables() {
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join(".codex")).unwrap();
+        fs::write(
+            home.path().join(".codex/config.toml"),
+            "model = \"gpt-5\"\n[mcp_servers.old]\ncommand = \"npx\"\nargs = [\"old\"]\n",
+        )
+        .unwrap();
+
+        save_mcp_config(
+            &McpTarget::codex_global(home.path()),
+            vec![McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            )],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(home.path().join(".codex/config.toml")).unwrap();
+        assert!(raw.contains("model = \"gpt-5\""));
+        assert!(raw.contains("[mcp_servers.better-icons]"));
+        assert!(!raw.contains("[mcp_servers.old]"));
+
+        let loaded = load_mcp_config(&McpTarget::codex_global(home.path())).unwrap();
+        assert_eq!(loaded.servers.len(), 1);
+        assert_eq!(
+            loaded.servers.get("better-icons"),
+            Some(&McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            ))
+        );
+    }
+
+    #[test]
+    fn save_codex_global_remote_mcp_uses_url_field() {
+        let home = tempfile::tempdir().unwrap();
+
+        save_mcp_config(
+            &McpTarget::codex_global(home.path()),
+            vec![McpServerConfig::remote(
+                "openai-docs",
+                "https://developers.openai.com/mcp",
+            )],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(home.path().join(".codex/config.toml")).unwrap();
+        assert!(raw.contains("[mcp_servers.openai-docs]"));
+        assert!(raw.contains("url = \"https://developers.openai.com/mcp\""));
+        assert!(!raw.contains("command ="));
+
+        let loaded = load_mcp_config(&McpTarget::codex_global(home.path())).unwrap();
+        assert_eq!(
+            loaded.servers.get("openai-docs"),
+            Some(&McpServerConfig::remote(
+                "openai-docs",
+                "https://developers.openai.com/mcp",
+            ))
+        );
+    }
+
+    #[test]
+    fn save_claude_project_mcp_writes_dot_mcp_json_and_preserves_non_mcp_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(".mcp.json"),
+            r#"{"theme":"warm","mcpServers":{"existing":{"command":"npx","args":["server"]}}}"#,
+        )
+        .unwrap();
+
+        save_mcp_config(
+            &McpTarget::claude_project(dir.path()),
+            vec![McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            )],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(dir.path().join(".mcp.json")).unwrap();
+        assert!(raw.contains("\"theme\""));
+        assert!(raw.contains("\"better-icons\""));
+        assert!(!raw.contains("\"existing\""));
+
+        let loaded = load_mcp_config(&McpTarget::claude_project(dir.path())).unwrap();
+        assert_eq!(loaded.servers.len(), 1);
+        assert_eq!(
+            loaded.servers.get("better-icons"),
+            Some(&McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            ))
+        );
+    }
+
+    #[test]
+    fn save_claude_global_mcp_preserves_non_mcp_fields() {
+        let home = tempfile::tempdir().unwrap();
+        fs::write(
+            home.path().join(".claude.json"),
+            r#"{"theme":"warm","mcpServers":{"existing":{"command":"npx","args":["server"]}}}"#,
+        )
+        .unwrap();
+
+        save_mcp_config(
+            &McpTarget::claude_global(home.path()),
+            vec![McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            )],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(home.path().join(".claude.json")).unwrap();
+        assert!(raw.contains("\"theme\""));
+        assert!(raw.contains("\"better-icons\""));
+        assert!(!raw.contains("\"existing\""));
+
+        let loaded = load_mcp_config(&McpTarget::claude_global(home.path())).unwrap();
+        assert_eq!(loaded.servers.len(), 1);
+        assert_eq!(
+            loaded.servers.get("better-icons"),
+            Some(&McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            ))
+        );
+    }
+
+    #[test]
+    fn save_claude_global_remote_mcp_uses_url_field() {
+        let home = tempfile::tempdir().unwrap();
+
+        save_mcp_config(
+            &McpTarget::claude_global(home.path()),
+            vec![McpServerConfig::remote(
+                "openai-docs",
+                "https://developers.openai.com/mcp",
+            )],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(home.path().join(".claude.json")).unwrap();
+        assert!(raw.contains("\"openai-docs\""));
+        assert!(raw.contains("\"url\":\"https://developers.openai.com/mcp\""));
+        assert!(!raw.contains("\"command\""));
+
+        let loaded = load_mcp_config(&McpTarget::claude_global(home.path())).unwrap();
+        assert_eq!(
+            loaded.servers.get("openai-docs"),
+            Some(&McpServerConfig::remote(
+                "openai-docs",
+                "https://developers.openai.com/mcp",
+            ))
+        );
+    }
+
+    #[test]
+    fn codex_project_scope_is_reported_unsupported() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let load_err = load_mcp_config(&McpTarget::codex_project(dir.path())).unwrap_err();
+        assert!(matches!(load_err, CoreError::UnsupportedMcpTarget(_)));
+        assert!(load_err.to_string().contains("project-scoped"));
+
+        let save_err = save_mcp_config(
+            &McpTarget::codex_project(dir.path()),
+            vec![McpServerConfig::stdio(
+                "better-icons",
+                "npx",
+                vec!["-y".into(), "better-icons".into()],
+            )],
+        )
+        .unwrap_err();
+        assert!(matches!(save_err, CoreError::UnsupportedMcpTarget(_)));
+        assert!(save_err.to_string().contains("project-scoped"));
     }
 }

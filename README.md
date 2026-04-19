@@ -107,14 +107,16 @@ GUI 支持：
 - 编辑整个 skill 目录中的文本文件
 - 编辑 registry 中的 `type` / `tags`
 - 手动迁移现有 Codex / Claude skill
+- 从 Git 仓库导入 `xxxx/SKILL.md` 结构的 skills
 - 同步 warehouse skill 到客户端目录
 - 生成 `init-project` 命令
+- 维护 Codex / Claude / Cursor 的 MCP 配置
+- 编辑应用内可维护的 warehouse 与 library roots 配置
 
 当前桌面客户端为单窗口分页结构：
 
-- 左侧固定导航：`Skills` / `Editor` / `Sync` / `Migration` / `Settings`
-- `Skills` 页负责分组浏览、搜索和标签筛选
-- `Editor` 页负责文件树、文本编辑和元数据维护
-- `Sync` 页负责客户端同步和 `init-project` 命令生成
-- `Migration` 页负责一次性迁移状态和手动迁移
-- `Settings` 页负责 warehouse、registry 和客户端目录信息
+- 左侧固定导航：`Skills` / `Editor` / `MCP` / `Settings`
+- `Skills` 页负责分组浏览、搜索、标签筛选、客户端同步、命令生成，以及仓库导入/迁移
+- `Editor` 页负责文件树和文本编辑，重点处理现有 skill 目录内容
+- `MCP` 页负责 Codex / Claude / Cursor 的 MCP server 配置和示例套用
+- `Settings` 页只保留可编辑的应用配置，例如 warehouse 和 library roots

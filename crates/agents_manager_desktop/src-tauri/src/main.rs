@@ -5,10 +5,12 @@ use std::path::{Component, Path, PathBuf};
 
 use agents_manager_core::{
     bootstrap_legacy_migration, create_skill, generate_init_project_command, import_git_skills,
-    load_app_config, migrate_legacy_skills, save_app_config, scan_warehouse, sync_global_skills,
-    update_skill_metadata, ClientKind, ClientRoots, CreateSkillRequest, GlobalSyncRequest,
-    InstallMode,
+    load_app_config, load_mcp_config, migrate_legacy_skills, save_app_config, save_mcp_config,
+    scan_warehouse, sync_global_skills, update_editable_settings, update_skill_metadata,
+    ClientKind, ClientRoots, CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest,
+    InstallMode, McpServerConfig, McpTarget,
 };
+use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,6 +79,45 @@ struct CreateSkillReq {
     id: String,
     name: Option<String>,
     description: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct EditableSettingsPayload {
+    skill_warehouse: String,
+    library_roots: Vec<String>,
+    default_skill_warehouse: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveEditableSettingsReq {
+    skill_warehouse: String,
+    library_roots: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct McpConfigReq {
+    client: String,
+    scope: String,
+    project_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveMcpConfigReq {
+    client: String,
+    scope: String,
+    project_path: Option<String>,
+    servers: Vec<McpServerConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct McpConfigPayload {
+    target_path: String,
+    servers: Vec<McpServerConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PickFolderReq {
+    start_path: Option<String>,
 }
 
 #[tauri::command]
@@ -207,6 +248,84 @@ fn import_git_skills_cmd(req: GitImportReq) -> Result<serde_json::Value, String>
     serde_json::to_value(report).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn load_editable_settings_cmd() -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    serde_json::to_value(editable_settings_payload(&cfg)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_editable_settings_cmd(req: SaveEditableSettingsReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let warehouse = req.skill_warehouse.trim();
+    if warehouse.is_empty() {
+        return Err("warehouse path is required".into());
+    }
+
+    let updated = update_editable_settings(
+        &cfg,
+        EditableSettingsUpdate {
+            skill_warehouse: Some(PathBuf::from(warehouse)),
+            library_roots: Some(
+                req.library_roots
+                    .into_iter()
+                    .map(|root| root.trim().to_string())
+                    .filter(|root| !root.is_empty())
+                    .map(PathBuf::from)
+                    .collect(),
+            ),
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
+    serde_json::to_value(editable_settings_payload(&updated)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_mcp_config_cmd(req: McpConfigReq) -> Result<serde_json::Value, String> {
+    let target = resolve_mcp_target(&req)?;
+    let target_path = target.config_path().map_err(|e| e.to_string())?;
+    let config = load_mcp_config(&target).map_err(|e| e.to_string())?;
+    let payload = McpConfigPayload {
+        target_path: target_path.display().to_string(),
+        servers: config.servers.into_values().collect(),
+    };
+    serde_json::to_value(payload).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_mcp_config_cmd(req: SaveMcpConfigReq) -> Result<serde_json::Value, String> {
+    let target = resolve_mcp_target(&McpConfigReq {
+        client: req.client,
+        scope: req.scope,
+        project_path: req.project_path,
+    })?;
+    let target_path = target.config_path().map_err(|e| e.to_string())?;
+    save_mcp_config(&target, req.servers).map_err(|e| e.to_string())?;
+    let config = load_mcp_config(&target).map_err(|e| e.to_string())?;
+    let payload = McpConfigPayload {
+        target_path: target_path.display().to_string(),
+        servers: config.servers.into_values().collect(),
+    };
+    serde_json::to_value(payload).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn pick_folder_cmd(req: Option<PickFolderReq>) -> Result<Option<String>, String> {
+    let mut dialog = FileDialog::new();
+    if let Some(start_path) = req
+        .and_then(|req| req.start_path)
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+    {
+        dialog = dialog.set_directory(start_path);
+    }
+
+    Ok(dialog
+        .pick_folder()
+        .map(|path| path.display().to_string()))
+}
+
 fn parse_client(client: &str) -> Result<ClientKind, String> {
     match client {
         "codex" => Ok(ClientKind::Codex),
@@ -220,6 +339,63 @@ fn parse_mode(mode: Option<&str>) -> InstallMode {
     match mode {
         Some("copy") => InstallMode::Copy,
         _ => InstallMode::Symlink,
+    }
+}
+
+fn parse_scope(scope: &str) -> Result<&str, String> {
+    match scope {
+        "project" => Ok("project"),
+        "global" => Ok("global"),
+        _ => Err(format!("unsupported scope: {scope}")),
+    }
+}
+
+fn editable_settings_payload(cfg: &agents_manager_core::AppConfig) -> EditableSettingsPayload {
+    let defaults = agents_manager_core::AppConfig::default();
+    EditableSettingsPayload {
+        skill_warehouse: cfg.skill_warehouse.display().to_string(),
+        library_roots: cfg
+            .library_roots
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect(),
+        default_skill_warehouse: defaults.skill_warehouse.display().to_string(),
+    }
+}
+
+fn resolve_home_dir() -> Result<PathBuf, String> {
+    ClientRoots::detect()
+        .map(|roots| roots.home_dir().to_path_buf())
+        .ok_or_else(|| "could not resolve home directory".to_string())
+}
+
+fn require_project_path(project_path: Option<&str>) -> Result<PathBuf, String> {
+    let path = project_path
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| "project path is required for project scope".to_string())?;
+    Ok(PathBuf::from(path))
+}
+
+fn resolve_mcp_target(req: &McpConfigReq) -> Result<McpTarget, String> {
+    let client = parse_client(&req.client)?;
+    let scope = parse_scope(&req.scope)?;
+    let home_dir = resolve_home_dir()?;
+
+    match (client, scope) {
+        (ClientKind::Codex, "global") => Ok(McpTarget::codex_global(home_dir)),
+        (ClientKind::Codex, "project") => Ok(McpTarget::codex_project(require_project_path(
+            req.project_path.as_deref(),
+        )?)),
+        (ClientKind::Claude, "global") => Ok(McpTarget::claude_global(home_dir)),
+        (ClientKind::Claude, "project") => Ok(McpTarget::claude_project(require_project_path(
+            req.project_path.as_deref(),
+        )?)),
+        (ClientKind::Cursor, "global") => Ok(McpTarget::cursor_global(home_dir)),
+        (ClientKind::Cursor, "project") => Ok(McpTarget::cursor_project(require_project_path(
+            req.project_path.as_deref(),
+        )?)),
+        _ => Err("unsupported MCP target".into()),
     }
 }
 
@@ -327,7 +503,12 @@ fn main() {
             migrate_legacy_skills_cmd,
             import_git_skills_cmd,
             sync_global_skills_cmd,
-            generate_init_project_command_cmd
+            generate_init_project_command_cmd,
+            load_editable_settings_cmd,
+            save_editable_settings_cmd,
+            load_mcp_config_cmd,
+            save_mcp_config_cmd,
+            pick_folder_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

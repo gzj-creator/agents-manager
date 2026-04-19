@@ -5,12 +5,14 @@ import {
   createActionState,
   createAppShellHtml,
   createEditorPageHtml,
+  createMcpPageHtml,
   createEditorState,
   createSkillDraftState,
   createSettingsPageHtml,
   createSkillsPageHtml,
   formatOutputPayload,
   groupSkillsByType,
+  normalizePageId,
   nextActionState,
   nextEditorState,
   nextSkillDraftState,
@@ -26,6 +28,7 @@ test('createAppShellHtml includes desktop navigation and page shell', () => {
   assert.match(html, /data-role="nav-rail"/)
   assert.match(html, /data-page-link="skills"/)
   assert.match(html, /data-page-link="editor"/)
+  assert.match(html, /data-page-link="mcp"/)
   assert.doesNotMatch(html, /data-page-link="sync"/)
   assert.doesNotMatch(html, /data-page-link="migration"/)
   assert.match(html, /data-page-link="settings"/)
@@ -34,6 +37,25 @@ test('createAppShellHtml includes desktop navigation and page shell', () => {
   assert.doesNotMatch(html, /id="selectedSkillSummary"/)
   assert.doesNotMatch(html, /id="pageEyebrow"/)
   assert.doesNotMatch(html, /data-role="output"/)
+})
+
+test('createAppShellHtml includes Skills Editor MCP and Settings navigation', () => {
+  const html = createAppShellHtml()
+
+  assert.match(html, /data-page-link="skills"/)
+  assert.match(html, /data-page-link="editor"/)
+  assert.match(html, /data-page-link="mcp"/)
+  assert.match(html, /data-page-link="settings"/)
+  assert.doesNotMatch(html, /data-page-link="migration"/)
+})
+
+test('normalizePageId keeps supported pages and falls back invalid values to skills', () => {
+  assert.equal(normalizePageId('skills'), 'skills')
+  assert.equal(normalizePageId('editor'), 'editor')
+  assert.equal(normalizePageId('mcp'), 'mcp')
+  assert.equal(normalizePageId('settings'), 'settings')
+  assert.equal(normalizePageId('migration'), 'skills')
+  assert.equal(normalizePageId(''), 'skills')
 })
 
 test('nextActionState marks an action as loading with matching status copy', () => {
@@ -96,6 +118,20 @@ test('createSkillsPageHtml includes search, tag filter, and grouped result list'
   assert.doesNotMatch(html, /#1/)
 })
 
+test('createSkillsPageHtml renders compact import actions for warehouse management', () => {
+  const html = createSkillsPageHtml({
+    skills: [],
+    importExpanded: true,
+    gitImportUrl: 'https://github.com/org/repo.git'
+  })
+
+  assert.match(html, /data-role="skills-import-trigger"/)
+  assert.match(html, /data-role="skills-import-panel"/)
+  assert.match(html, /导入旧 Skills/)
+  assert.match(html, /导入仓库中的 Skills/)
+  assert.match(html, /id="gitRepoUrl"/)
+})
+
 test('resolveDistributionSkillIds prefers checked skills and falls back to current selection', () => {
   assert.deepEqual(resolveDistributionSkillIds([], 3), [3])
   assert.deepEqual(resolveDistributionSkillIds([2, 5, 2], 3), [2, 5])
@@ -131,55 +167,49 @@ test('createEditorPageHtml renders workbench shell with no args', () => {
   assert.doesNotMatch(html, /data-role="create-skill-form"/)
 })
 
-test('createSettingsPageHtml renders migration and git import tools', () => {
+test('createSettingsPageHtml renders editable app settings only', () => {
   const html = createSettingsPageHtml({
-    migrationReport: {
-      imported: 1,
-      overwritten: 0,
-      skipped: 0,
-      removed: 0
-    },
-    migrationOutput: {
-      tone: 'success',
-      text: '{"imported":1}'
-    },
-    gitImportUrl: 'https://example.com/skills.git',
-    gitImportReport: {
-      discovered: 3,
-      imported: 2,
-      skipped: 1,
-      conflicts: 0
-    },
-    gitImportOutput: {
-      tone: 'success',
-      text: '{"imported":2}'
-    }
+    skillWarehouse: '/tmp/warehouse',
+    libraryRoots: ['/tmp/lib-a']
   })
 
-  assert.match(html, /data-role="settings-migration"/)
-  assert.match(html, /data-role="settings-git-import"/)
-  assert.match(html, /id="migrate"/)
-  assert.match(html, /id="gitRepoUrl"/)
-  assert.match(html, /value="https:\/\/example.com\/skills\.git"/)
-  assert.match(html, /id="importGitSkills"/)
-  assert.match(html, /data-role="migration-output"/)
-  assert.match(html, /data-role="git-import-output"/)
-  assert.match(html, /data-role="output"/)
-  assert.match(html, /<details class="output-disclosure"/)
-  assert.doesNotMatch(html, /<details class="output-disclosure" open/)
-  assert.match(html, /查看执行结果/)
+  assert.match(html, /data-role="settings-warehouse"/)
+  assert.match(html, /data-role="settings-library-roots"/)
+  assert.doesNotMatch(html, /settings-migration/)
+  assert.doesNotMatch(html, /settings-git-import/)
 })
 
-test('createSettingsPageHtml keeps tool outputs hidden until results exist', () => {
-  const html = createSettingsPageHtml()
+test('createMcpPageHtml renders agent scope server list and editor surface', () => {
+  const html = createMcpPageHtml({
+    client: 'claude',
+    scope: 'project',
+    projectPath: '/tmp/project',
+    servers: [
+      {
+        name: 'better-icons',
+        command: 'npx',
+        args: ['-y', 'better-icons']
+      }
+    ],
+    selectedServerName: 'better-icons'
+  })
 
-  assert.match(html, /data-role="settings-migration"/)
-  assert.match(html, /data-role="settings-git-import"/)
-  assert.match(html, /id="gitRepoUrl"/)
-  assert.match(html, /id="importGitSkills"/)
-  assert.doesNotMatch(html, /data-role="migration-output"/)
-  assert.doesNotMatch(html, /data-role="git-import-output"/)
-  assert.doesNotMatch(html, /data-role="output"/)
+  assert.match(html, /data-role="mcp-client-select"/)
+  assert.match(html, /data-role="mcp-scope-select"/)
+  assert.match(html, /data-role="mcp-server-list"/)
+  assert.match(html, /data-role="mcp-editor"/)
+  assert.match(html, /better-icons/)
+})
+
+test('createSettingsPageHtml renders warehouse path and advanced source controls', () => {
+  const html = createSettingsPageHtml({
+    skillWarehouse: '/tmp/warehouse',
+    libraryRoots: ['/tmp/lib-a', '/tmp/lib-b']
+  })
+
+  assert.match(html, /选择文件夹/)
+  assert.match(html, /恢复默认/)
+  assert.match(html, /添加目录/)
 })
 
 test('nextEditorState marks buffer dirty after text edit', () => {

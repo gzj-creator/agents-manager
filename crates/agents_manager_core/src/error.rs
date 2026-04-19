@@ -23,6 +23,10 @@ pub enum CoreError {
     DestConflict(PathBuf),
     #[error("Invalid project root: {0}")]
     InvalidProject(PathBuf),
+    #[error("Invalid MCP config: {0}")]
+    InvalidMcpConfig(String),
+    #[error("Unsupported MCP target: {0}")]
+    UnsupportedMcpTarget(String),
 }
 
 pub type Result<T> = std::result::Result<T, CoreError>;

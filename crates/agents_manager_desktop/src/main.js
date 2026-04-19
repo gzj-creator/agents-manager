@@ -5,12 +5,14 @@ import {
   createActionState,
   createAppShellHtml,
   createEditorPageHtml,
+  createMcpPageHtml,
   createEditorState,
   createSkillDraftState,
   createSettingsPageHtml,
   createSkillsPageHtml,
   filterSkills,
   formatOutputPayload,
+  normalizePageId,
   nextActionState,
   nextEditorState,
   nextSkillDraftState,
@@ -23,6 +25,20 @@ import {
 
 const app = document.getElementById('app')
 let copyFeedbackTimer = null
+const MCP_DEMOS = {
+  betterIcons: {
+    name: 'better-icons',
+    command: 'npx',
+    args: ['-y', 'better-icons'],
+    url: null
+  },
+  openAiDocs: {
+    name: 'openai-docs',
+    command: null,
+    args: [],
+    url: 'https://developers.openai.com/mcp'
+  }
+}
 
 const state = {
   action: createActionState(),
@@ -31,6 +47,9 @@ const state = {
   installMode: 'symlink',
   generatedCommand: '',
   copyFeedback: 'idle',
+  skillWarehouse: '',
+  defaultSkillWarehouse: '',
+  libraryRoots: [],
   skills: [],
   filters: {
     query: '',
@@ -42,11 +61,27 @@ const state = {
   selectedPath: '',
   editor: createEditorState(),
   createSkill: createSkillDraftState(),
+  skillsImportExpanded: false,
   migrationResult: null,
   migrationOutput: null,
   gitImportUrl: '',
   gitImportResult: null,
-  gitImportOutput: null
+  gitImportOutput: null,
+  mcp: {
+    client: 'codex',
+    scope: 'global',
+    projectPath: '',
+    targetPath: '',
+    servers: [],
+    selectedServerName: '',
+    editor: {
+      name: '',
+      transport: 'stdio',
+      command: '',
+      args: [],
+      url: ''
+    }
+  }
 }
 
 const ACTION_BUTTON_IDS = [
@@ -65,7 +100,20 @@ const ACTION_BUTTON_IDS = [
   'createFolder',
   'renamePath',
   'deletePath',
-  'importGitSkills'
+  'importGitSkills',
+  'toggleSkillsImport',
+  'pickSettingsWarehouse',
+  'resetSettingsWarehouse',
+  'addLibraryRoot',
+  'saveSettings',
+  'reloadMcp',
+  'pickMcpProject',
+  'newMcpServer',
+  'applyBetterIconsDemo',
+  'applyOpenAiDocsDemo',
+  'saveMcpServer',
+  'deleteMcpServer',
+  'saveMcpConfig'
 ]
 
 const PAGE_META = {
@@ -79,10 +127,15 @@ const PAGE_META = {
     title: 'Editor',
     description: '保留 Explorer 和主编辑区，把注意力放回文件内容。'
   },
+  mcp: {
+    eyebrow: 'MCP',
+    title: 'MCP',
+    description: '集中维护 Codex / Claude / Cursor 的 MCP 配置，并支持一键套用示例。'
+  },
   settings: {
     eyebrow: 'Settings',
     title: 'Settings',
-    description: '低频维护动作放在这里，包括旧技能迁移和一次性 Git 仓库导入。'
+    description: '这里只保留可编辑的应用配置，路径选择尽量通过按钮完成。'
   }
 }
 
@@ -132,6 +185,51 @@ function copyFeedbackLabel() {
   return state.copyFeedback === 'copied' ? '已复制' : '复制'
 }
 
+function createMcpEditorState(server = null) {
+  return {
+    name: server?.name || '',
+    transport: server?.url ? 'remote' : 'stdio',
+    command: server?.command || '',
+    args: [...(server?.args || [])],
+    url: server?.url || ''
+  }
+}
+
+function mcpProjectScopeDisabled(client = state.mcp.client) {
+  return client === 'codex'
+}
+
+function selectedMcpServer() {
+  return state.mcp.servers.find(server => server.name === state.mcp.selectedServerName) || null
+}
+
+function mcpMode() {
+  return state.mcp.editor.transport || (state.mcp.editor.url ? 'remote' : 'stdio')
+}
+
+function mcpRequestPayload() {
+  return {
+    client: state.mcp.client,
+    scope: state.mcp.scope,
+    project_path: state.mcp.projectPath.trim() || null
+  }
+}
+
+function applyMcpServers(servers = []) {
+  state.mcp.servers = [...servers].sort((left, right) => left.name.localeCompare(right.name))
+  if (
+    state.mcp.selectedServerName &&
+    state.mcp.servers.some(server => server.name === state.mcp.selectedServerName)
+  ) {
+    state.mcp.editor = createMcpEditorState(selectedMcpServer())
+    return
+  }
+
+  const first = state.mcp.servers[0] || null
+  state.mcp.selectedServerName = first?.name || ''
+  state.mcp.editor = createMcpEditorState(first)
+}
+
 function markCommandCopied() {
   if (copyFeedbackTimer) {
     window.clearTimeout(copyFeedbackTimer)
@@ -168,10 +266,6 @@ function renderCurrentPage() {
     return
   }
 
-  if (!PAGE_META[state.currentPage]) {
-    state.currentPage = 'skills'
-  }
-
   if (state.currentPage === 'skills') {
     pageBody.innerHTML = createSkillsPageHtml({
       skills: filteredSkills(),
@@ -186,7 +280,13 @@ function renderCurrentPage() {
       mode: state.installMode,
       command: state.generatedCommand,
       copyLabel: copyFeedbackLabel(),
-      copyState: state.copyFeedback
+      copyState: state.copyFeedback,
+      importExpanded: state.skillsImportExpanded,
+      gitImportUrl: state.gitImportUrl,
+      migrationResult: state.migrationResult,
+      migrationOutput: state.migrationOutput,
+      gitImportResult: state.gitImportResult,
+      gitImportOutput: state.gitImportOutput
     })
     return
   }
@@ -202,13 +302,26 @@ function renderCurrentPage() {
     return
   }
 
-  pageBody.innerHTML = createSettingsPageHtml({
-    migrationReport: state.migrationResult,
-    migrationOutput: state.migrationOutput,
-    gitImportUrl: state.gitImportUrl,
-    gitImportReport: state.gitImportResult,
-    gitImportOutput: state.gitImportOutput
-  })
+  if (state.currentPage === 'mcp') {
+    pageBody.innerHTML = createMcpPageHtml({
+      client: state.mcp.client,
+      scope: state.mcp.scope,
+      projectPath: state.mcp.projectPath,
+      targetPath: state.mcp.targetPath,
+      servers: state.mcp.servers,
+      selectedServerName: state.mcp.selectedServerName,
+      editor: state.mcp.editor,
+      disabledProjectScope: mcpProjectScopeDisabled()
+    })
+    return
+  }
+
+  if (state.currentPage === 'settings') {
+    pageBody.innerHTML = createSettingsPageHtml({
+      skillWarehouse: state.skillWarehouse,
+      libraryRoots: state.libraryRoots
+    })
+  }
 }
 
 function syncShell() {
@@ -314,6 +427,28 @@ function syncActionUi() {
   const importGitSkillsButton = document.getElementById('importGitSkills')
   if (importGitSkillsButton) {
     importGitSkillsButton.disabled = state.action.busy || !state.gitImportUrl.trim()
+  }
+
+  const saveSettingsButton = document.getElementById('saveSettings')
+  if (saveSettingsButton) {
+    saveSettingsButton.disabled = state.action.busy || !state.skillWarehouse.trim()
+  }
+
+  const pickMcpProject = document.getElementById('pickMcpProject')
+  if (pickMcpProject) {
+    pickMcpProject.disabled = state.action.busy || state.mcp.scope !== 'project'
+  }
+
+  const saveMcpServer = document.getElementById('saveMcpServer')
+  if (saveMcpServer) {
+    saveMcpServer.disabled = state.action.busy || !state.mcp.editor.name.trim()
+  }
+
+  const saveMcpConfig = document.getElementById('saveMcpConfig')
+  if (saveMcpConfig) {
+    saveMcpConfig.disabled =
+      state.action.busy ||
+      (state.mcp.scope === 'project' && !state.mcp.projectPath.trim())
   }
 }
 
@@ -438,6 +573,7 @@ function syncSkillMetadata() {
 }
 
 function syncAll() {
+  state.currentPage = normalizePageId(state.currentPage)
   syncShell()
   renderCurrentPage()
   syncActionUi()
@@ -480,6 +616,205 @@ async function loadSkills() {
   } else if (!state.selectedSkillId) {
     resetEditorSelection()
   }
+}
+
+function applyEditableSettingsPayload(payload) {
+  state.skillWarehouse = payload.skill_warehouse || ''
+  state.defaultSkillWarehouse = payload.default_skill_warehouse || ''
+  state.libraryRoots = payload.library_roots || []
+}
+
+async function loadEditableSettings() {
+  const payload = await invoke('load_editable_settings_cmd')
+  applyEditableSettingsPayload(payload)
+}
+
+async function pickFolder(startPath = '') {
+  return (
+    (await invoke('pick_folder_cmd', {
+      req: {
+        start_path: startPath || null
+      }
+    })) || ''
+  )
+}
+
+async function pickSettingsWarehouse() {
+  const next = await pickFolder(state.skillWarehouse)
+  if (!next) {
+    return
+  }
+
+  state.skillWarehouse = next
+  syncAll()
+}
+
+async function addLibraryRoot() {
+  const next = await pickFolder(state.libraryRoots[0] || state.skillWarehouse)
+  if (!next || state.libraryRoots.includes(next)) {
+    return
+  }
+
+  state.libraryRoots = [...state.libraryRoots, next]
+  syncAll()
+}
+
+function removeLibraryRoot(index) {
+  state.libraryRoots = state.libraryRoots.filter((_, currentIndex) => currentIndex !== index)
+  syncAll()
+}
+
+async function saveSettings() {
+  const payload = await invoke('save_editable_settings_cmd', {
+    req: {
+      skill_warehouse: state.skillWarehouse.trim(),
+      library_roots: state.libraryRoots
+    }
+  })
+
+  applyEditableSettingsPayload(payload)
+  await loadSkills()
+  syncAll()
+}
+
+function ensureCompatibleMcpScope() {
+  if (mcpProjectScopeDisabled() && state.mcp.scope === 'project') {
+    state.mcp.scope = 'global'
+    state.mcp.projectPath = ''
+  }
+}
+
+function mcpEditorHasInput() {
+  return Boolean(
+    state.mcp.editor.name.trim() ||
+      state.mcp.editor.command.trim() ||
+      state.mcp.editor.url.trim() ||
+      state.mcp.editor.args.length
+  )
+}
+
+function buildMcpServerFromEditor() {
+  const name = state.mcp.editor.name.trim()
+  if (!name) {
+    throw new Error('请输入 MCP Server 名称')
+  }
+
+  if (mcpMode() === 'remote') {
+    const url = state.mcp.editor.url.trim()
+    if (!url) {
+      throw new Error('请输入远程 MCP URL')
+    }
+    return {
+      name,
+      command: null,
+      args: [],
+      url
+    }
+  }
+
+  const command = state.mcp.editor.command.trim()
+  if (!command) {
+    throw new Error('请输入 MCP 命令')
+  }
+
+  return {
+    name,
+    command,
+    args: [...state.mcp.editor.args],
+    url: null
+  }
+}
+
+function upsertMcpServer(server) {
+  const draft = [...state.mcp.servers]
+  const previousName = state.mcp.selectedServerName
+  const duplicate = draft.find(
+    entry => entry.name === server.name && entry.name !== previousName
+  )
+  if (duplicate) {
+    throw new Error(`MCP Server ${server.name} 已存在`)
+  }
+
+  const next = draft.filter(entry => entry.name !== previousName && entry.name !== server.name)
+  next.push(server)
+  applyMcpServers(next)
+  state.mcp.selectedServerName = server.name
+  state.mcp.editor = createMcpEditorState(server)
+}
+
+async function loadMcpConfigForCurrentTarget() {
+  ensureCompatibleMcpScope()
+  if (state.mcp.scope === 'project' && !state.mcp.projectPath.trim()) {
+    state.mcp.targetPath = ''
+    state.mcp.selectedServerName = ''
+    state.mcp.editor = createMcpEditorState()
+    state.mcp.servers = []
+    syncAll()
+    return
+  }
+
+  const payload = await invoke('load_mcp_config_cmd', {
+    req: mcpRequestPayload()
+  })
+
+  state.mcp.targetPath = payload.target_path || ''
+  applyMcpServers(payload.servers || [])
+  syncAll()
+}
+
+function applyMcpDemo(demo) {
+  state.mcp.selectedServerName = demo.name
+  state.mcp.editor = createMcpEditorState(demo)
+  syncAll()
+}
+
+function resetMcpEditor() {
+  state.mcp.selectedServerName = ''
+  state.mcp.editor = createMcpEditorState()
+  syncAll()
+}
+
+async function saveCurrentMcpServer() {
+  const server = buildMcpServerFromEditor()
+  upsertMcpServer(server)
+  syncAll()
+}
+
+async function persistMcpServers() {
+  const payload = await invoke('save_mcp_config_cmd', {
+    req: {
+      ...mcpRequestPayload(),
+      servers: state.mcp.servers
+    }
+  })
+  state.mcp.targetPath = payload.target_path || ''
+  applyMcpServers(payload.servers || [])
+  syncAll()
+}
+
+async function saveMcpConfig() {
+  if (mcpEditorHasInput()) {
+    const server = buildMcpServerFromEditor()
+    upsertMcpServer(server)
+  }
+
+  await persistMcpServers()
+}
+
+async function deleteCurrentMcpServer() {
+  if (!state.mcp.selectedServerName) {
+    return
+  }
+
+  const confirmed = window.confirm(`移除 ${state.mcp.selectedServerName} ?`)
+  if (!confirmed) {
+    return
+  }
+
+  applyMcpServers(
+    state.mcp.servers.filter(server => server.name !== state.mcp.selectedServerName)
+  )
+  await persistMcpServers()
 }
 
 async function loadTree(stableId) {
@@ -651,6 +986,7 @@ async function deletePath() {
 
 async function migrateSkills() {
   const result = await invoke('migrate_legacy_skills_cmd')
+  state.skillsImportExpanded = true
   state.migrationResult = result
   state.migrationOutput = formatOutputPayload(result, 'success')
   await loadSkills()
@@ -669,6 +1005,7 @@ async function importGitSkills() {
       repo_url: repoUrl
     }
   })
+  state.skillsImportExpanded = true
   state.gitImportResult = result
   state.gitImportOutput = formatOutputPayload(result, 'success')
   await loadSkills()
@@ -784,6 +1121,57 @@ function bindEvents() {
     if (event.target.id === 'gitRepoUrl') {
       state.gitImportUrl = event.target.value
       syncActionUi()
+      return
+    }
+
+    if (event.target.id === 'settingsWarehouse') {
+      state.skillWarehouse = event.target.value
+      syncActionUi()
+      return
+    }
+
+    if (event.target.id === 'mcpProjectPath') {
+      state.mcp.projectPath = event.target.value
+      syncActionUi()
+      return
+    }
+
+    if (event.target.id === 'mcpServerName') {
+      state.mcp.editor = {
+        ...state.mcp.editor,
+        name: event.target.value
+      }
+      syncActionUi()
+      return
+    }
+
+    if (event.target.id === 'mcpServerCommand') {
+      state.mcp.editor = {
+        ...state.mcp.editor,
+        command: event.target.value
+      }
+      syncActionUi()
+      return
+    }
+
+    if (event.target.id === 'mcpServerArgs') {
+      state.mcp.editor = {
+        ...state.mcp.editor,
+        args: event.target.value
+          .split(/\s+/)
+          .map(item => item.trim())
+          .filter(Boolean)
+      }
+      syncActionUi()
+      return
+    }
+
+    if (event.target.id === 'mcpServerUrl') {
+      state.mcp.editor = {
+        ...state.mcp.editor,
+        url: event.target.value
+      }
+      syncActionUi()
     }
   })
 
@@ -812,6 +1200,33 @@ function bindEvents() {
       state.installMode = event.target.value
       resetGeneratedCommand()
       syncAll()
+      return
+    }
+
+    if (event.target.id === 'mcpClientSelect') {
+      state.mcp.client = event.target.value
+      ensureCompatibleMcpScope()
+      syncAll()
+      runAction('loadMcp', loadMcpConfigForCurrentTarget)
+      return
+    }
+
+    if (event.target.id === 'mcpScopeSelect') {
+      state.mcp.scope = event.target.value
+      syncAll()
+      if (state.mcp.scope === 'project' && !state.mcp.projectPath.trim()) {
+        return
+      }
+      runAction('loadMcp', loadMcpConfigForCurrentTarget)
+      return
+    }
+
+    if (event.target.id === 'mcpTransportMode') {
+      state.mcp.editor = {
+        ...state.mcp.editor,
+        transport: event.target.value
+      }
+      syncAll()
     }
   })
 
@@ -823,11 +1238,28 @@ function bindEvents() {
       }
       state.currentPage = pageLink.dataset.pageLink
       syncAll()
+      if (state.currentPage === 'mcp') {
+        runAction('loadMcp', loadMcpConfigForCurrentTarget)
+      }
       return
     }
 
     const button = event.target.closest('[data-skill-id]')
     if (!button) {
+      const removeLibraryRootButton = event.target.closest('[data-remove-library-root]')
+      if (removeLibraryRootButton) {
+        removeLibraryRoot(Number(removeLibraryRootButton.dataset.removeLibraryRoot))
+        return
+      }
+
+      const mcpServerButton = event.target.closest('[data-mcp-server]')
+      if (mcpServerButton) {
+        state.mcp.selectedServerName = mcpServerButton.dataset.mcpServer
+        state.mcp.editor = createMcpEditorState(selectedMcpServer())
+        syncAll()
+        return
+      }
+
       const treeButton = event.target.closest('[data-tree-path]')
       if (treeButton) {
         const path = treeButton.dataset.treePath
@@ -847,6 +1279,10 @@ function bindEvents() {
       }
 
       switch (event.target.id) {
+        case 'toggleSkillsImport':
+          state.skillsImportExpanded = !state.skillsImportExpanded
+          syncAll()
+          return
         case 'refresh':
           if (!confirmDiscardEditorChanges('刷新并重新加载当前 skill')) {
             return
@@ -933,6 +1369,19 @@ function bindEvents() {
             }
           })
           return
+        case 'pickSettingsWarehouse':
+          runAction('pickFolder', pickSettingsWarehouse)
+          return
+        case 'resetSettingsWarehouse':
+          state.skillWarehouse = state.defaultSkillWarehouse || state.skillWarehouse
+          syncAll()
+          return
+        case 'addLibraryRoot':
+          runAction('pickFolder', addLibraryRoot)
+          return
+        case 'saveSettings':
+          runAction('saveSettings', saveSettings)
+          return
         case 'syncSkills':
           runAction('sync', syncSkills)
           return
@@ -941,6 +1390,37 @@ function bindEvents() {
           return
         case 'copyCommand':
           runAction('copyCommand', copyGeneratedCommand)
+          return
+        case 'reloadMcp':
+          runAction('loadMcp', loadMcpConfigForCurrentTarget)
+          return
+        case 'pickMcpProject':
+          runAction('pickFolder', async () => {
+            const next = await pickFolder(state.mcp.projectPath)
+            if (!next) {
+              return
+            }
+            state.mcp.projectPath = next
+            await loadMcpConfigForCurrentTarget()
+          })
+          return
+        case 'newMcpServer':
+          resetMcpEditor()
+          return
+        case 'applyBetterIconsDemo':
+          applyMcpDemo(MCP_DEMOS.betterIcons)
+          return
+        case 'applyOpenAiDocsDemo':
+          applyMcpDemo(MCP_DEMOS.openAiDocs)
+          return
+        case 'saveMcpServer':
+          runAction('saveMcpServer', saveCurrentMcpServer)
+          return
+        case 'deleteMcpServer':
+          runAction('saveMcpConfig', deleteCurrentMcpServer)
+          return
+        case 'saveMcpConfig':
+          runAction('saveMcpConfig', saveMcpConfig)
           return
         default:
           return
@@ -987,7 +1467,7 @@ async function init() {
   bindEvents()
 
   await runAction('bootstrap', async () => {
-    await loadSkills()
+    await Promise.all([loadSkills(), loadEditableSettings()])
     syncAll()
   })
 }

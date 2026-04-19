@@ -226,6 +226,11 @@ textarea {
   align-items: start;
 }
 
+.page-grid--mcp {
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  align-items: stretch;
+}
+
 .skills-page__intro,
 .skills-page__catalog,
 .skills-page__details,
@@ -250,6 +255,34 @@ textarea {
   align-items: center;
   justify-content: flex-end;
   margin-bottom: 12px;
+}
+
+.skills-import-shell {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.skills-import-panel {
+  border: 1px solid rgba(74, 57, 36, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 251, 245, 0.76);
+  padding: 14px;
+}
+
+.skills-import-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.skills-import-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(74, 57, 36, 0.08);
 }
 
 .skill-list--page {
@@ -695,6 +728,10 @@ textarea {
   gap: 8px;
 }
 
+.field--wide {
+  grid-column: 1 / -1;
+}
+
 .skills-page__details {
   display: grid;
   align-content: start;
@@ -754,6 +791,87 @@ textarea:focus {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.settings-root-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-root-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(74, 57, 36, 0.1);
+  background: rgba(255, 251, 245, 0.8);
+}
+
+.settings-root-row__path {
+  min-width: 0;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.mcp-sidebar,
+.mcp-editor-panel {
+  min-height: calc(100vh - 290px);
+}
+
+.mcp-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.mcp-server-list {
+  display: grid;
+  gap: 8px;
+  min-height: 180px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(74, 57, 36, 0.1);
+  background: rgba(255, 251, 245, 0.74);
+}
+
+.mcp-server-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.mcp-server-row.is-selected {
+  border-color: rgba(155, 77, 37, 0.18);
+  background: rgba(155, 77, 37, 0.12);
+}
+
+.mcp-server-row span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.mcp-editor-panel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.mcp-editor-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 #copyCommand[data-copy-state="copied"] {
@@ -876,6 +994,14 @@ button:disabled {
   background: rgba(255, 255, 255, 0.36);
 }
 
+code {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(74, 57, 36, 0.08);
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 0.82em;
+}
+
 .app-stage[data-page="editor"] .page-copy h2 {
   font-size: 1.45rem;
 }
@@ -909,7 +1035,8 @@ button:disabled {
 
   .page-grid--skills,
   .page-grid--editor,
-  .page-grid--split {
+  .page-grid--split,
+  .page-grid--mcp {
     grid-template-columns: 1fr;
   }
 
@@ -943,6 +1070,8 @@ button:disabled {
     justify-content: flex-start;
   }
 
+  .skills-import-grid,
+  .mcp-editor-grid,
   .explorer-actions {
     grid-template-columns: 1fr;
   }

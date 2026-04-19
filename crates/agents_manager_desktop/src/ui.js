@@ -68,6 +68,31 @@ const ACTION_COPY = {
     start: '正在复制命令',
     success: '命令已复制',
     error: '命令复制失败'
+  },
+  saveSettings: {
+    start: '正在保存设置',
+    success: '设置已保存',
+    error: '设置保存失败'
+  },
+  pickFolder: {
+    start: '正在选择目录',
+    success: '目录已选中',
+    error: '目录选择失败'
+  },
+  loadMcp: {
+    start: '正在读取 MCP 配置',
+    success: 'MCP 配置已加载',
+    error: 'MCP 配置读取失败'
+  },
+  saveMcpServer: {
+    start: '正在整理当前 MCP Server',
+    success: 'MCP Server 已整理到列表',
+    error: 'MCP Server 保存失败'
+  },
+  saveMcpConfig: {
+    start: '正在写入 MCP 配置',
+    success: 'MCP 配置已写入',
+    error: 'MCP 配置写入失败'
   }
 }
 
@@ -259,6 +284,10 @@ export function resolveDistributionSkillIds(checkedSkillIds = [], selectedSkillI
   return selectedSkillId == null ? [] : [selectedSkillId]
 }
 
+export function normalizePageId(page) {
+  return ['skills', 'editor', 'mcp', 'settings'].includes(page) ? page : 'skills'
+}
+
 export function renderSkillGroupsHtml(skills, selectedSkillId, checkedSkillIds = []) {
   if (!skills.length) {
     return '<div class="empty-state">暂无 skills</div>'
@@ -408,6 +437,65 @@ export function renderGitImportSummary(report) {
         <span>冲突 ${report.conflicts ?? 0}</span>
       </div>
     </div>
+  `
+}
+
+function renderSkillsImportPanelHtml({
+  importExpanded = false,
+  gitImportUrl = '',
+  migrationResult = null,
+  migrationOutput = null,
+  gitImportResult = null,
+  gitImportOutput = null
+} = {}) {
+  const triggerLabel = importExpanded ? '收起仓库操作' : '仓库导入与迁移'
+
+  return `
+    <section class="skills-import-shell">
+      <button
+        id="toggleSkillsImport"
+        class="ghost"
+        type="button"
+        data-role="skills-import-trigger"
+        aria-expanded="${importExpanded ? 'true' : 'false'}"
+      >${triggerLabel}</button>
+
+      ${importExpanded
+        ? `
+          <div class="skills-import-panel" data-role="skills-import-panel">
+            <div class="skills-import-grid">
+              <section class="skills-import-card">
+                <div class="section-title">导入旧 Skills</div>
+                <p class="sidebar-copy">把旧客户端目录中的 skills 一次性迁移到当前 warehouse。</p>
+                <div class="button-row compact">
+                  <button id="migrate" class="secondary" type="button">执行迁移</button>
+                </div>
+                ${renderMigrationSummary(migrationResult)}
+                ${renderToolOutputHtml(migrationOutput, 'skills-migration-output')}
+              </section>
+
+              <section class="skills-import-card">
+                <div class="section-title">导入仓库中的 Skills</div>
+                <p class="sidebar-copy">支持 clone Git 仓库后自动查找形如 <code>xxxx/SKILL.md</code> 的目录结构并导入到 warehouse。</p>
+                <label class="field">
+                  <span>Git URL</span>
+                  <input
+                    id="gitRepoUrl"
+                    value="${escapeHtml(gitImportUrl)}"
+                    placeholder="https://github.com/org/repo.git"
+                  />
+                </label>
+                <div class="button-row compact">
+                  <button id="importGitSkills" class="secondary" type="button">导入仓库</button>
+                </div>
+                ${renderGitImportSummary(gitImportResult)}
+                ${renderToolOutputHtml(gitImportOutput, 'skills-git-output')}
+              </section>
+            </div>
+          </div>
+        `
+        : ''}
+    </section>
   `
 }
 
@@ -639,7 +727,13 @@ export function createSkillsPageHtml({
   mode = 'symlink',
   command = '',
   copyLabel = '复制',
-  copyState = 'idle'
+  copyState = 'idle',
+  importExpanded = false,
+  gitImportUrl = '',
+  migrationResult = null,
+  migrationOutput = null,
+  gitImportResult = null,
+  gitImportOutput = null
 } = {}) {
   return `
     <section class="page-grid page-grid--skills">
@@ -668,6 +762,14 @@ export function createSkillsPageHtml({
             </select>
           </label>
         </div>
+        ${renderSkillsImportPanelHtml({
+          importExpanded,
+          gitImportUrl,
+          migrationResult,
+          migrationOutput,
+          gitImportResult,
+          gitImportOutput
+        })}
         <div class="catalog-toolbar">
           <span class="catalog-count">${skills.length} skills</span>
         </div>
@@ -711,50 +813,223 @@ function renderToolOutputHtml(output = null, dataRole = 'migration-output') {
 }
 
 export function createSettingsPageHtml({
-  migrationReport = null,
-  migrationOutput = null,
-  gitImportUrl = '',
-  gitImportReport = null,
-  gitImportOutput = null
+  skillWarehouse = '',
+  libraryRoots = []
 } = {}) {
+  const rootItems = Array.isArray(libraryRoots)
+    ? libraryRoots
+        .map(
+          (root, index) => `
+            <div class="settings-root-row">
+              <span class="settings-root-row__path">${escapeHtml(root)}</span>
+              <button
+                class="ghost"
+                type="button"
+                data-remove-library-root="${index}"
+              >移除</button>
+            </div>
+          `
+        )
+        .join('')
+    : ''
+
   return `
     <section class="page-grid page-grid--split">
-      <article class="panel" data-role="settings-migration">
+      <article class="panel" data-role="settings-warehouse">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Legacy Migration</p>
-            <h2>迁移现有 Skills</h2>
+            <p class="panel-kicker">App Config</p>
+            <h2>Skill Warehouse</h2>
           </div>
         </div>
-        <p class="sidebar-copy">把已有的 Codex / Claude 全局 skills 重新导入到 warehouse。这个操作不会常驻占一个单独页面。</p>
-        <div class="tool-summary">
-          ${renderMigrationSummary(migrationReport)}
+        <p class="sidebar-copy">维护桌面端使用的技能仓库路径。优先通过按钮选择，避免手动记目录结构。</p>
+        <label class="field">
+          <span>Warehouse Path</span>
+          <input
+            id="settingsWarehouse"
+            value="${escapeHtml(skillWarehouse)}"
+            placeholder="/path/to/warehouse"
+          />
+        </label>
+        <div class="button-row compact">
+          <button id="pickSettingsWarehouse" class="secondary" type="button">选择文件夹</button>
+          <button id="resetSettingsWarehouse" class="ghost" type="button">恢复默认</button>
+          <button id="saveSettings" class="primary" type="button">保存设置</button>
         </div>
-        <div class="button-row">
-          <button id="migrate" class="secondary" type="button" data-role="migration-action">迁移现有 Skills</button>
-        </div>
-        ${renderToolOutputHtml(migrationOutput, 'migration-output')}
       </article>
 
-      <article class="panel" data-role="settings-git-import">
+      <article class="panel" data-role="settings-library-roots">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Git Import</p>
-            <h2>从 Git 仓库导入</h2>
+            <p class="panel-kicker">App Config</p>
+            <h2>Library Roots</h2>
           </div>
         </div>
-        <p class="sidebar-copy">输入仓库地址后，程序会临时 clone 仓库，找到所有包含 SKILL.md 的目录，并把它们一次性导入到 warehouse。</p>
+        <p class="sidebar-copy">这些目录会一起参与 skill 扫描。对不熟悉仓库结构的人，优先点按钮添加即可。</p>
+        <div class="settings-root-list" id="settingsLibraryRoots" data-role="settings-library-root-list">
+          ${rootItems || '<div class="empty-state">尚未添加额外目录</div>'}
+        </div>
+        <div class="button-row compact">
+          <button id="addLibraryRoot" class="secondary" type="button">添加目录</button>
+        </div>
+      </article>
+    </section>
+  `
+}
+
+function renderMcpServerListHtml(servers = [], selectedServerName = '') {
+  if (!servers.length) {
+    return '<div class="empty-state">当前目标还没有 MCP server</div>'
+  }
+
+  return servers
+    .map(server => {
+      const name = escapeHtml(server.name)
+      const isSelected = server.name === selectedServerName ? ' is-selected' : ''
+      const mode = server.url ? 'Remote' : 'stdio'
+
+      return `
+        <button
+          class="mcp-server-row${isSelected}"
+          type="button"
+          data-mcp-server="${name}"
+        >
+          <strong>${name}</strong>
+          <span>${mode}</span>
+        </button>
+      `
+    })
+    .join('')
+}
+
+export function createMcpPageHtml({
+  client = 'codex',
+  scope = 'global',
+  projectPath = '',
+  targetPath = '',
+  servers = [],
+  selectedServerName = '',
+  editor = {},
+  disabledProjectScope = false
+} = {}) {
+  const mode = editor.transport || (editor.url ? 'remote' : 'stdio')
+
+  return `
+    <section class="page-grid page-grid--mcp">
+      <article class="panel mcp-sidebar">
+        <div class="panel-head compact-head">
+          <div>
+            <p class="panel-kicker">MCP Target</p>
+            <h2>配置入口</h2>
+          </div>
+          <button id="reloadMcp" class="ghost" type="button">重新读取</button>
+        </div>
+
         <label class="field">
-          <span>仓库地址</span>
-          <input id="gitRepoUrl" value="${escapeHtml(gitImportUrl)}" placeholder="https://github.com/org/repo.git" />
+          <span>客户端</span>
+          <select id="mcpClientSelect" data-role="mcp-client-select">
+            <option value="codex"${client === 'codex' ? ' selected' : ''}>Codex</option>
+            <option value="claude"${client === 'claude' ? ' selected' : ''}>Claude</option>
+            <option value="cursor"${client === 'cursor' ? ' selected' : ''}>Cursor</option>
+          </select>
         </label>
-        <div class="tool-summary">
-          ${renderGitImportSummary(gitImportReport)}
+
+        <label class="field">
+          <span>作用域</span>
+          <select id="mcpScopeSelect" data-role="mcp-scope-select">
+            <option value="global"${scope === 'global' ? ' selected' : ''}>全局</option>
+            <option value="project"${scope === 'project' ? ' selected' : ''}${disabledProjectScope ? ' disabled' : ''}>项目内</option>
+          </select>
+        </label>
+        ${disabledProjectScope
+          ? '<p class="sidebar-copy">Codex 当前只开放全局 MCP 配置，项目内作用域会保持禁用。</p>'
+          : ''}
+
+        ${scope === 'project'
+          ? `
+            <label class="field">
+              <span>项目路径</span>
+              <input id="mcpProjectPath" value="${escapeHtml(projectPath)}" placeholder="/path/to/project" />
+            </label>
+            <div class="button-row compact">
+              <button id="pickMcpProject" class="secondary" type="button">选择项目目录</button>
+            </div>
+          `
+          : ''}
+
+        <label class="field">
+          <span>目标文件</span>
+          <input value="${escapeHtml(targetPath)}" readonly />
+        </label>
+
+        <section class="explorer-section">
+          <div class="section-title">Servers</div>
+          <div class="mcp-server-list" data-role="mcp-server-list">
+            ${renderMcpServerListHtml(servers, selectedServerName)}
+          </div>
+        </section>
+
+        <div class="button-row compact">
+          <button id="newMcpServer" class="secondary" type="button">空白新建</button>
+          <button id="applyBetterIconsDemo" class="ghost" type="button">Better Icons Demo</button>
+          <button id="applyOpenAiDocsDemo" class="ghost" type="button">OpenAI Docs Demo</button>
         </div>
+      </article>
+
+      <article class="panel mcp-editor-panel" data-role="mcp-editor">
+        <div class="panel-head compact-head">
+          <div>
+            <p class="panel-kicker">Server Editor</p>
+            <h2>${escapeHtml(selectedServerName || '新建 MCP Server')}</h2>
+          </div>
+          <button id="saveMcpConfig" class="primary" type="button">保存 MCP 配置</button>
+        </div>
+
+        <div class="mcp-editor-grid">
+          <label class="field">
+            <span>Server Name</span>
+            <input id="mcpServerName" value="${escapeHtml(editor.name || '')}" placeholder="better-icons" />
+          </label>
+
+          <label class="field">
+            <span>连接方式</span>
+            <select id="mcpTransportMode">
+              <option value="stdio"${mode === 'stdio' ? ' selected' : ''}>stdio</option>
+              <option value="remote"${mode === 'remote' ? ' selected' : ''}>remote URL</option>
+            </select>
+          </label>
+
+          ${mode === 'remote'
+            ? `
+              <label class="field field--wide">
+                <span>Remote URL</span>
+                <input
+                  id="mcpServerUrl"
+                  value="${escapeHtml(editor.url || '')}"
+                  placeholder="https://developers.openai.com/mcp"
+                />
+              </label>
+            `
+            : `
+              <label class="field">
+                <span>Command</span>
+                <input id="mcpServerCommand" value="${escapeHtml(editor.command || '')}" placeholder="npx" />
+              </label>
+              <label class="field field--wide">
+                <span>Args</span>
+                <input
+                  id="mcpServerArgs"
+                  value="${escapeHtml((editor.args || []).join(' '))}"
+                  placeholder="-y better-icons"
+                />
+              </label>
+            `}
+        </div>
+
         <div class="button-row">
-          <button id="importGitSkills" class="primary" type="button">导入仓库中的 Skills</button>
+          <button id="saveMcpServer" class="secondary" type="button">保存当前 Server</button>
+          <button id="deleteMcpServer" class="ghost" type="button"${selectedServerName ? '' : ' disabled'}>移除当前</button>
         </div>
-        ${renderToolOutputHtml(gitImportOutput, 'git-import-output')}
       </article>
     </section>
   `
@@ -773,6 +1048,7 @@ export function createAppShellHtml() {
         <nav class="nav-links" aria-label="Primary">
           <button class="nav-link is-active" type="button" data-page-link="skills">Skills</button>
           <button class="nav-link" type="button" data-page-link="editor">Editor</button>
+          <button class="nav-link" type="button" data-page-link="mcp">MCP</button>
           <button class="nav-link" type="button" data-page-link="settings">Settings</button>
         </nav>
       </aside>
