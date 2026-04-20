@@ -4,11 +4,14 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use agents_manager_core::{
-    bootstrap_legacy_migration, create_skill, generate_init_project_command, import_git_skills,
-    load_app_config, load_mcp_config, migrate_legacy_skills, save_app_config, save_mcp_config,
-    scan_warehouse, sync_global_skills, update_editable_settings, update_skill_metadata,
-    ClientKind, ClientRoots, CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest,
-    InstallMode, McpServerConfig, McpTarget,
+    bootstrap_legacy_migration, copy_paths_into_entry, create_memory, create_skill, delete_memory,
+    delete_skill, generate_init_memory_command, generate_init_project_command,
+    import_dropped_memory, import_dropped_skill, import_git_skills, load_app_config,
+    load_mcp_config, migrate_legacy_skills, rename_memory, rename_skill, save_app_config,
+    save_mcp_config, scan_memory_warehouse, scan_warehouse, sync_global_skills,
+    update_editable_settings, update_skill_metadata, ClientKind, ClientRoots, CreateMemoryRequest,
+    CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest, InstallMode, McpServerConfig,
+    McpTarget,
 };
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
@@ -42,6 +45,19 @@ struct WriteSkillFileReq {
 }
 
 #[derive(Debug, Deserialize)]
+struct MemoryPathReq {
+    stable_id: u64,
+    relative_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WriteMemoryFileReq {
+    stable_id: u64,
+    relative_path: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct CreateSkillPathReq {
     stable_id: u64,
     relative_path: String,
@@ -56,10 +72,35 @@ struct RenameSkillPathReq {
 }
 
 #[derive(Debug, Deserialize)]
+struct CreateMemoryPathReq {
+    stable_id: u64,
+    relative_path: String,
+    kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RenameMemoryPathReq {
+    stable_id: u64,
+    from: String,
+    to: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct SyncSkillsReq {
     client: String,
     skill_ids: Vec<u64>,
     mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteSkillReq {
+    stable_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RenameSkillReq {
+    stable_id: u64,
+    id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,10 +116,49 @@ struct GitImportReq {
 }
 
 #[derive(Debug, Deserialize)]
+struct ImportDroppedSkillReq {
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportDroppedMemoryReq {
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CopyDroppedPathsReq {
+    stable_id: u64,
+    relative_target_dir: String,
+    paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct CreateSkillReq {
     id: String,
     name: Option<String>,
     description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateMemoryReq {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteMemoryReq {
+    stable_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RenameMemoryReq {
+    stable_id: u64,
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct InitMemoryCommandReq {
+    client: String,
+    memory: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,6 +223,47 @@ fn create_skill_cmd(req: CreateSkillReq) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn list_warehouse_memories_cmd() -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let entries = scan_memory_warehouse(&cfg).map_err(|e| e.to_string())?;
+    serde_json::to_value(entries).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_memory_cmd(req: CreateMemoryReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let created =
+        create_memory(&cfg, CreateMemoryRequest { id: req.id }).map_err(|e| e.to_string())?;
+    serde_json::to_value(created).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_memory_cmd(req: RenameMemoryReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let renamed = rename_memory(&cfg, req.stable_id, &req.id).map_err(|e| e.to_string())?;
+    serde_json::to_value(renamed).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_memory_cmd(req: DeleteMemoryReq) -> Result<(), String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    delete_memory(&cfg, req.stable_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_skill_cmd(req: DeleteSkillReq) -> Result<(), String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    delete_skill(&cfg, req.stable_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_skill_cmd(req: RenameSkillReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let renamed = rename_skill(&cfg, req.stable_id, &req.id).map_err(|e| e.to_string())?;
+    serde_json::to_value(renamed).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn update_skill_metadata_cmd(req: UpdateSkillMetadataReq) -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
     let updated = update_skill_metadata(&cfg, req.stable_id, req.skill_type, req.tags)
@@ -164,14 +285,48 @@ fn read_skill_file_cmd(req: SkillPathReq) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn inspect_memory_tree_cmd(stable_id: u64) -> Result<serde_json::Value, String> {
+    let path = resolve_memory_root(stable_id).map_err(|e| e.to_string())?;
+    let tree = build_tree(&path, Path::new("")).map_err(|e| e.to_string())?;
+    serde_json::to_value(tree).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_memory_file_cmd(req: MemoryPathReq) -> Result<String, String> {
+    let path = resolve_memory_file(req.stable_id, &req.relative_path).map_err(|e| e.to_string())?;
+    fs::read_to_string(path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn write_skill_file_cmd(req: WriteSkillFileReq) -> Result<(), String> {
     let path = resolve_skill_file(req.stable_id, &req.relative_path).map_err(|e| e.to_string())?;
     fs::write(path, req.content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
+fn write_memory_file_cmd(req: WriteMemoryFileReq) -> Result<(), String> {
+    let path = resolve_memory_file(req.stable_id, &req.relative_path).map_err(|e| e.to_string())?;
+    fs::write(path, req.content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn create_skill_path_cmd(req: CreateSkillPathReq) -> Result<(), String> {
     let path = resolve_skill_file(req.stable_id, &req.relative_path).map_err(|e| e.to_string())?;
+    match req.kind.as_str() {
+        "dir" => fs::create_dir_all(path).map_err(|e| e.to_string())?,
+        _ => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            fs::write(path, "").map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn create_memory_path_cmd(req: CreateMemoryPathReq) -> Result<(), String> {
+    let path = resolve_memory_file(req.stable_id, &req.relative_path).map_err(|e| e.to_string())?;
     match req.kind.as_str() {
         "dir" => fs::create_dir_all(path).map_err(|e| e.to_string())?,
         _ => {
@@ -195,8 +350,29 @@ fn rename_skill_path_cmd(req: RenameSkillPathReq) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn rename_memory_path_cmd(req: RenameMemoryPathReq) -> Result<(), String> {
+    let from = resolve_memory_file(req.stable_id, &req.from).map_err(|e| e.to_string())?;
+    let to = resolve_memory_file(req.stable_id, &req.to).map_err(|e| e.to_string())?;
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::rename(from, to).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn delete_skill_path_cmd(req: SkillPathReq) -> Result<(), String> {
     let path = resolve_skill_file(req.stable_id, &req.relative_path).map_err(|e| e.to_string())?;
+    let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.is_dir() {
+        fs::remove_dir_all(path).map_err(|e| e.to_string())
+    } else {
+        fs::remove_file(path).map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn delete_memory_path_cmd(req: MemoryPathReq) -> Result<(), String> {
+    let path = resolve_memory_file(req.stable_id, &req.relative_path).map_err(|e| e.to_string())?;
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
     if meta.is_dir() {
         fs::remove_dir_all(path).map_err(|e| e.to_string())
@@ -239,6 +415,52 @@ fn generate_init_project_command_cmd(req: InitCommandReq) -> Result<String, Stri
         &req.skill_ids,
         req.mode.as_deref(),
     ))
+}
+
+#[tauri::command]
+fn generate_init_memory_command_cmd(req: InitMemoryCommandReq) -> Result<String, String> {
+    Ok(generate_init_memory_command(
+        parse_client(&req.client)?,
+        req.memory,
+    ))
+}
+
+#[tauri::command]
+fn import_dropped_skill_cmd(req: ImportDroppedSkillReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let imported = import_dropped_skill(&cfg, Path::new(&req.path)).map_err(|e| e.to_string())?;
+    serde_json::to_value(imported).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_dropped_memory_cmd(req: ImportDroppedMemoryReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let imported = import_dropped_memory(&cfg, Path::new(&req.path)).map_err(|e| e.to_string())?;
+    serde_json::to_value(imported).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn copy_paths_into_skill_cmd(req: CopyDroppedPathsReq) -> Result<Vec<String>, String> {
+    let root = resolve_skill_root(req.stable_id).map_err(|e| e.to_string())?;
+    let sources = req.paths.into_iter().map(PathBuf::from).collect::<Vec<_>>();
+    let copied = copy_paths_into_entry(&root, &req.relative_target_dir, &sources)
+        .map_err(|e| e.to_string())?;
+    Ok(copied
+        .into_iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect())
+}
+
+#[tauri::command]
+fn copy_paths_into_memory_cmd(req: CopyDroppedPathsReq) -> Result<Vec<String>, String> {
+    let root = resolve_memory_root(req.stable_id).map_err(|e| e.to_string())?;
+    let sources = req.paths.into_iter().map(PathBuf::from).collect::<Vec<_>>();
+    let copied = copy_paths_into_entry(&root, &req.relative_target_dir, &sources)
+        .map_err(|e| e.to_string())?;
+    Ok(copied
+        .into_iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect())
 }
 
 #[tauri::command]
@@ -321,9 +543,7 @@ fn pick_folder_cmd(req: Option<PickFolderReq>) -> Result<Option<String>, String>
         dialog = dialog.set_directory(start_path);
     }
 
-    Ok(dialog
-        .pick_folder()
-        .map(|path| path.display().to_string()))
+    Ok(dialog.pick_folder().map(|path| path.display().to_string()))
 }
 
 fn parse_client(client: &str) -> Result<ClientKind, String> {
@@ -418,6 +638,25 @@ fn resolve_skill_file(
     Ok(root.join(relative))
 }
 
+fn resolve_memory_root(stable_id: u64) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let cfg = load_app_config()?;
+    let entries = scan_memory_warehouse(&cfg)?;
+    entries
+        .into_iter()
+        .find(|entry| entry.stable_id == stable_id)
+        .map(|entry| entry.path)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "memory not found").into())
+}
+
+fn resolve_memory_file(
+    stable_id: u64,
+    relative_path: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let root = resolve_memory_root(stable_id)?;
+    let relative = sanitize_relative_path(relative_path)?;
+    Ok(root.join(relative))
+}
+
 fn sanitize_relative_path(relative_path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let path = Path::new(relative_path);
     let mut cleaned = PathBuf::new();
@@ -428,7 +667,7 @@ fn sanitize_relative_path(relative_path: &str) -> Result<PathBuf, Box<dyn std::e
             _ => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
-                    "path must stay inside selected skill",
+                    "path must stay inside selected entry",
                 )
                 .into())
             }
@@ -493,17 +732,34 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             list_warehouse_skills_cmd,
             create_skill_cmd,
+            delete_skill_cmd,
+            rename_skill_cmd,
+            list_warehouse_memories_cmd,
+            create_memory_cmd,
+            rename_memory_cmd,
+            delete_memory_cmd,
             update_skill_metadata_cmd,
             inspect_skill_tree_cmd,
+            inspect_memory_tree_cmd,
             read_skill_file_cmd,
+            read_memory_file_cmd,
             write_skill_file_cmd,
+            write_memory_file_cmd,
             create_skill_path_cmd,
+            create_memory_path_cmd,
             rename_skill_path_cmd,
+            rename_memory_path_cmd,
             delete_skill_path_cmd,
+            delete_memory_path_cmd,
             migrate_legacy_skills_cmd,
+            import_dropped_skill_cmd,
+            import_dropped_memory_cmd,
+            copy_paths_into_skill_cmd,
+            copy_paths_into_memory_cmd,
             import_git_skills_cmd,
             sync_global_skills_cmd,
             generate_init_project_command_cmd,
+            generate_init_memory_command_cmd,
             load_editable_settings_cmd,
             save_editable_settings_cmd,
             load_mcp_config_cmd,

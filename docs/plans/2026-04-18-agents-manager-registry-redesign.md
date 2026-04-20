@@ -364,7 +364,7 @@ git add crates/agents_manager_desktop/src-tauri/src/main.rs \
 git commit -m "feat: expose warehouse desktop commands"
 ```
 
-### Task 8: Replace the desktop information architecture and visual shell
+### Task 8: Replace the desktop shell with page navigation and client framing
 
 **Files:**
 - Modify: `crates/agents_manager_desktop/src/main.js`
@@ -376,25 +376,24 @@ git commit -m "feat: expose warehouse desktop commands"
 
 Add a UI helper test asserting the app shell now includes:
 
-- grouped skill navigator
-- search/filter area
-- file tree
-- editor
-- metadata panel
-- migration action area
-- client action area
+- left navigation rail
+- page links for `Skills`, `Editor`, `Sync`, `Migration`, and `Settings`
+- top page header area
+- main page viewport container
 
 Suggested test:
 
 ```js
-test('createAppShellHtml includes grouped navigator, editor, metadata, and migration panels', () => {
+test('createAppShellHtml includes desktop navigation and page shell', () => {
   const html = createAppShellHtml()
-  assert.match(html, /data-role="skill-list"/)
-  assert.match(html, /data-role="filter-bar"/)
-  assert.match(html, /data-role="skill-tree"/)
-  assert.match(html, /data-role="editor"/)
-  assert.match(html, /data-role="metadata-panel"/)
-  assert.match(html, /data-role="migration-panel"/)
+  assert.match(html, /data-role="nav-rail"/)
+  assert.match(html, /data-page-link="skills"/)
+  assert.match(html, /data-page-link="editor"/)
+  assert.match(html, /data-page-link="sync"/)
+  assert.match(html, /data-page-link="migration"/)
+  assert.match(html, /data-page-link="settings"/)
+  assert.match(html, /data-role="page-header"/)
+  assert.match(html, /data-role="page-body"/)
 })
 ```
 
@@ -402,17 +401,16 @@ test('createAppShellHtml includes grouped navigator, editor, metadata, and migra
 
 Run: `npm --prefix crates/agents_manager_desktop test`
 
-Expected: FAIL because the old shell is still profile-centric.
+Expected: FAIL because the old shell still renders the previous crowded workspace.
 
 **Step 3: Write minimal implementation**
 
 Refactor the desktop shell into:
 
-- grouped warehouse skill navigator
-- filter/search toolbar
-- file tree and editor workspace
-- metadata and distribution sidebar
-- explicit migration area
+- persistent left navigation rail
+- top header with title, selected skill summary, and action status
+- page viewport that swaps focused content instead of stacking every workflow
+- more spacious desktop framing with clearer hierarchy and reduced crowding
 
 Apply the page polish as part of this task:
 
@@ -434,10 +432,10 @@ git add crates/agents_manager_desktop/src/main.js \
   crates/agents_manager_desktop/src/ui.js \
   crates/agents_manager_desktop/src/styles.css \
   crates/agents_manager_desktop/src/ui.test.js
-git commit -m "feat: redesign desktop warehouse workspace"
+git commit -m "feat: add desktop navigation shell"
 ```
 
-### Task 9: Add metadata editing, filters, and manual migration flows
+### Task 9: Build the Skills page for browsing, grouping, and discovery
 
 **Files:**
 - Modify: `crates/agents_manager_desktop/src/main.js`
@@ -451,9 +449,8 @@ Add tests for:
 
 - grouping skills by `skill_type`
 - filtering by tags
-- editor state dirty tracking
-- metadata update controls
-- manual migration result rendering
+- rendering the `Skills` page search/filter controls
+- rendering grouped warehouse results in the page body
 
 Suggested test:
 
@@ -465,26 +462,34 @@ test('groupSkillsByType groups entries under their registry type', () => {
   ])
   assert.equal(groups[0].label, 'workflow')
 })
+
+test('createSkillsPageHtml includes search, tag filter, and grouped result list', () => {
+  const html = createSkillsPageHtml({
+    skills: [{ stable_id: 1, id: 'demo', name: 'Demo', skill_type: 'workflow', tags: ['rust'] }],
+    query: '',
+    tag: ''
+  })
+  assert.match(html, /data-role="skills-search"/)
+  assert.match(html, /data-role="skills-tag-filter"/)
+  assert.match(html, /data-role="skill-list"/)
+})
 ```
 
 **Step 2: Run test to verify it fails**
 
 Run: `npm --prefix crates/agents_manager_desktop test`
 
-Expected: FAIL because grouped metadata and migration helpers do not exist yet.
+Expected: FAIL because the current UI does not have a dedicated browse page.
 
 **Step 3: Write minimal implementation**
 
 Implement desktop flows for:
 
+- default `Skills` landing page
 - grouped skill rendering
 - tag filters and search
-- metadata editing and saving
-- manual migration button and result summary
-- file selection, editing, saving
-- create, rename, delete for files and folders
-
-Only support text editing in phase one.
+- compact browse-first skill cards
+- page navigation from a selected skill into the editor workflow
 
 **Step 4: Run test to verify it passes**
 
@@ -499,10 +504,82 @@ git add crates/agents_manager_desktop/src/main.js \
   crates/agents_manager_desktop/src/ui.js \
   crates/agents_manager_desktop/src/styles.css \
   crates/agents_manager_desktop/src/ui.test.js
-git commit -m "feat: add warehouse metadata and migration flows"
+git commit -m "feat: add skills browse page"
 ```
 
-### Task 10: Final verification and documentation cleanup
+### Task 10: Build the Editor, Sync, Migration, and Settings pages
+
+**Files:**
+- Modify: `crates/agents_manager_desktop/src/main.js`
+- Modify: `crates/agents_manager_desktop/src/ui.js`
+- Modify: `crates/agents_manager_desktop/src/styles.css`
+- Modify: `crates/agents_manager_desktop/src/ui.test.js`
+
+**Step 1: Write the failing tests**
+
+Add tests for:
+
+- editor page rendering file tree, editor, and metadata controls
+- sync page rendering client selection and generated command area
+- migration page rendering one-time migration state and manual migration action
+- settings page rendering warehouse and client root summaries
+- editor state dirty tracking
+
+Suggested tests:
+
+```js
+test('createEditorPageHtml includes tree, editor, and metadata regions', () => {
+  const html = createEditorPageHtml()
+  assert.match(html, /data-role="skill-tree"/)
+  assert.match(html, /data-role="editor"/)
+  assert.match(html, /data-role="metadata-panel"/)
+})
+
+test('createMigrationPageHtml includes migration status and manual action', () => {
+  const html = createMigrationPageHtml()
+  assert.match(html, /data-role="migration-status"/)
+  assert.match(html, /data-role="migration-action"/)
+})
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `npm --prefix crates/agents_manager_desktop test`
+
+Expected: FAIL because the remaining workflows are still coupled into the old single screen.
+
+**Step 3: Write minimal implementation**
+
+Implement focused pages for:
+
+- `Editor`: file tree, text editor, metadata edit/save, create/rename/delete
+- `Sync`: client selection, sync action, generated `init-project` command
+- `Migration`: bootstrap state, manual migration button, result summary
+- `Settings`: warehouse, registry, and client-root summaries
+
+Keep phase-one scope:
+
+- text editing only
+- single-window navigation
+- warehouse-backed data only
+
+**Step 4: Run test to verify it passes**
+
+Run: `npm --prefix crates/agents_manager_desktop test`
+
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add crates/agents_manager_desktop/src/main.js \
+  crates/agents_manager_desktop/src/ui.js \
+  crates/agents_manager_desktop/src/styles.css \
+  crates/agents_manager_desktop/src/ui.test.js
+git commit -m "feat: split desktop workflows into focused pages"
+```
+
+### Task 11: Final verification and documentation cleanup
 
 **Files:**
 - Modify: `README.md`

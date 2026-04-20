@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test src/ui.test.js",
+    "test": "node --test src/ui.test.js src/capabilities.test.js src/icon-assets.test.js",
     "build": "vite build",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

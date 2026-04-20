@@ -9,7 +9,10 @@ pub struct EditableSettingsUpdate {
     pub library_roots: Option<Vec<PathBuf>>,
 }
 
-pub fn update_editable_settings(cfg: &AppConfig, update: EditableSettingsUpdate) -> Result<AppConfig> {
+pub fn update_editable_settings(
+    cfg: &AppConfig,
+    update: EditableSettingsUpdate,
+) -> Result<AppConfig> {
     let mut next = cfg.clone();
 
     if let Some(skill_warehouse) = update.skill_warehouse {
@@ -32,4 +35,3 @@ pub fn update_editable_settings(cfg: &AppConfig, update: EditableSettingsUpdate)
 
     Ok(next)
 }
-

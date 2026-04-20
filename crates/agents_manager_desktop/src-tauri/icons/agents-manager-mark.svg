@@ -1,0 +1,46 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="512"
+  height="512"
+  viewBox="0 0 128 128"
+  fill="none"
+  role="img"
+  aria-labelledby="title desc"
+>
+  <title id="title">agents-manager warm sparkle icon</title>
+  <desc id="desc">
+    A warm orange rounded square containing a centered four-point sparkle for
+    AI skills.
+  </desc>
+  <defs>
+    <linearGradient id="tile" x1="18" y1="16" x2="110" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8C85A" />
+      <stop offset="1" stop-color="#E78E1B" />
+    </linearGradient>
+    <linearGradient id="shine" x1="48" y1="40" x2="82" y2="84" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7E5" />
+      <stop offset="1" stop-color="#FFE5B0" />
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#tile)" />
+  <rect
+    x="9.5"
+    y="9.5"
+    width="109"
+    height="109"
+    rx="26.5"
+    stroke="#F2A629"
+    stroke-width="3"
+  />
+  <path
+    fill="#A75310"
+    opacity=".24"
+    d="M66 31l-9.2 24.5L32 64.7l24.8 9.3L66 98.5l9.2-24.5L100 64.7l-24.8-9.2z"
+  />
+  <path
+    fill="url(#shine)"
+    d="M64 27l-8.3 22.1L33.6 57.4l22.1 8.3L64 87.8l8.3-22.1l22.1-8.3l-22.1-8.3z"
+  />
+  <circle cx="91" cy="34" r="5.5" fill="#FFF1C7" opacity=".96" />
+</svg>

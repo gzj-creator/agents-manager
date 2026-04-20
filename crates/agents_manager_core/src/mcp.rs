@@ -190,11 +190,9 @@ fn read_optional_text_file(path: &Path, default: &str) -> Result<String> {
 
 fn load_json_mcp(raw: &str, file_label: &str) -> Result<McpClient> {
     let v: serde_json::Value = serde_json::from_str(raw)?;
-    let obj = v
-        .as_object()
-        .ok_or_else(|| {
-            CoreError::InvalidMcpConfig(format!("{file_label} must be a JSON object"))
-        })?;
+    let obj = v.as_object().ok_or_else(|| {
+        CoreError::InvalidMcpConfig(format!("{file_label} must be a JSON object"))
+    })?;
 
     let mut client = McpClient::default();
     let Some(servers) = obj.get("mcpServers") else {
@@ -238,7 +236,9 @@ fn load_json_mcp(raw: &str, file_label: &str) -> Result<McpClient> {
                 );
             }
             (None, Some(url)) => {
-                client.servers.insert(name.to_string(), McpServerConfig::remote(name, url));
+                client
+                    .servers
+                    .insert(name.to_string(), McpServerConfig::remote(name, url));
             }
             (None, None) => {}
         }
@@ -258,11 +258,9 @@ fn save_json_mcp(
     } else {
         serde_json::from_str(raw)?
     };
-    let obj = v
-        .as_object_mut()
-        .ok_or_else(|| {
-            CoreError::InvalidMcpConfig(format!("{file_label} must be a JSON object"))
-        })?;
+    let obj = v.as_object_mut().ok_or_else(|| {
+        CoreError::InvalidMcpConfig(format!("{file_label} must be a JSON object"))
+    })?;
     let servers_obj = servers
         .into_iter()
         .map(|s| {
@@ -288,10 +286,7 @@ fn save_json_mcp(
                 }
                 (None, None) => {}
             }
-            (
-                s.name,
-                serde_json::Value::Object(entry),
-            )
+            (s.name, serde_json::Value::Object(entry))
         })
         .collect();
     obj.insert("mcpServers".into(), serde_json::Value::Object(servers_obj));
@@ -347,7 +342,9 @@ fn load_codex_global_toml(raw: &str) -> Result<McpClient> {
                 );
             }
             (None, Some(url)) => {
-                client.servers.insert(name.to_string(), McpServerConfig::remote(name, url));
+                client
+                    .servers
+                    .insert(name.to_string(), McpServerConfig::remote(name, url));
             }
             (None, None) => {}
         }

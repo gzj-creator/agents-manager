@@ -1,1 +1,1 @@
-{}
+{"main-capability":{"identifier":"main-capability","description":"Allow the main desktop window to use the default Tauri core APIs, including event listeners required by drag-and-drop import.","local":true,"windows":["main"],"permissions":["core:default"]}}

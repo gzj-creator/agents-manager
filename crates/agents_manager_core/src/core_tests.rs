@@ -9,12 +9,14 @@ mod tests {
     use tempfile::{tempdir, TempDir};
 
     use crate::{
-        apply_to_project, bootstrap_legacy_migration, create_skill, doctor, import_git_skills,
-        init_project, load_mcp_config, load_skill_registry, save_mcp_config,
-        save_skill_registry, scan_warehouse, update_editable_settings, AppConfig,
-        ApplySelections, ClientKind, ClientRoots, CoreError, CreateSkillRequest,
-        EditableSettingsUpdate, InitMode, InstallMode, McpServerConfig, McpTarget, Profile,
-        RegistrySkill, SkillEntry, SkillRegistry,
+        apply_to_project, bootstrap_legacy_migration, copy_paths_into_entry, create_memory,
+        create_skill, delete_memory, delete_skill, doctor, generate_init_memory_command,
+        import_dropped_memory, import_dropped_skill, import_git_skills, init_memory, init_project,
+        load_mcp_config, load_skill_registry, rename_memory, rename_skill, save_mcp_config,
+        save_skill_registry, scan_memory_warehouse, scan_warehouse, update_editable_settings,
+        AppConfig, ApplySelections, ClientKind, ClientRoots, CoreError, CreateMemoryRequest,
+        CreateSkillRequest, EditableSettingsUpdate, InitMode, InstallMode, McpServerConfig,
+        McpTarget, Profile, RegistrySkill, SkillEntry, SkillRegistry,
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -54,14 +56,17 @@ mod tests {
         fn new() -> Self {
             let tmp = tempdir().unwrap();
             let warehouse = tmp.path().join("warehouse");
+            let memory_warehouse = tmp.path().join("memories");
             let project = tmp.path().join("project");
             let home = tmp.path().join("home");
             fs::create_dir_all(&warehouse).unwrap();
+            fs::create_dir_all(&memory_warehouse).unwrap();
             fs::create_dir_all(&project).unwrap();
             fs::create_dir_all(&home).unwrap();
             Self {
                 cfg: AppConfig {
                     skill_warehouse: warehouse,
+                    memory_warehouse,
                     registry_path: tmp.path().join("registry.toml"),
                     bootstrap_migration_done: false,
                     library_roots: Vec::new(),
@@ -165,6 +170,7 @@ mod tests {
 
         let cfg = AppConfig {
             skill_warehouse: tmp.path().join("warehouse"),
+            memory_warehouse: tmp.path().join("memories"),
             registry_path: tmp.path().join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: vec![lib.clone()],
@@ -202,6 +208,7 @@ mod tests {
 
         let cfg = AppConfig {
             skill_warehouse: tmp.path().join("warehouse"),
+            memory_warehouse: tmp.path().join("memories"),
             registry_path: tmp.path().join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: vec![lib],
@@ -231,6 +238,25 @@ mod tests {
         let cfg = AppConfig::default();
         assert!(cfg.library_roots.is_empty());
         assert!(cfg.skill_warehouse.ends_with(".agents-manager/skills"));
+    }
+
+    #[test]
+    fn memory_warehouse_defaults_under_agents_manager_home() {
+        let ctx = TestCtx::new();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _home = EnvVarGuard::set("HOME", ctx.home.as_os_str());
+        let _env = EnvVarGuard::set(
+            "AGENTS_MANAGER_CONFIG_DIR",
+            ctx.tmp.path().join("config-dir").as_os_str(),
+        );
+
+        let cfg = crate::load_app_config().unwrap();
+
+        assert_eq!(
+            cfg.memory_warehouse,
+            ctx.home.join(".agents-manager/memories")
+        );
+        assert!(cfg.memory_warehouse.is_dir());
     }
 
     #[test]
@@ -393,6 +419,528 @@ mod tests {
     }
 
     #[test]
+    fn scan_memory_warehouse_keeps_entries_without_memory_md() {
+        let ctx = TestCtx::new();
+        let entry_dir = ctx.cfg.memory_warehouse.join("team-default");
+        fs::create_dir_all(&entry_dir).unwrap();
+
+        let entries = scan_memory_warehouse(&ctx.cfg).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "team-default");
+        assert!(entries[0].stable_id > 0);
+        assert_eq!(entries[0].path, entry_dir);
+        assert_eq!(entries[0].memory_md_path, entries[0].path.join("MEMORY.md"));
+        assert!(entries[0].tags.is_empty());
+    }
+
+    #[test]
+    fn scan_memory_warehouse_ignores_hidden_directories_under_warehouse() {
+        let ctx = TestCtx::new();
+        fs::create_dir_all(ctx.cfg.memory_warehouse.join(".internal-cache")).unwrap();
+        fs::create_dir_all(ctx.cfg.memory_warehouse.join("visible-memory")).unwrap();
+
+        let entries = scan_memory_warehouse(&ctx.cfg).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "visible-memory");
+    }
+
+    #[test]
+    fn scan_memory_warehouse_ignores_legacy_memory_id_files_and_keeps_ids_unique() {
+        let ctx = TestCtx::new();
+        for name in ["alpha", "beta"] {
+            let dir = ctx.cfg.memory_warehouse.join(name);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(".memory-id"), "7").unwrap();
+        }
+
+        let entries = scan_memory_warehouse(&ctx.cfg).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert!(entries
+            .iter()
+            .all(|entry| !entry.path.join(".memory-id").exists()));
+        assert_ne!(entries[0].stable_id, entries[1].stable_id);
+    }
+
+    #[test]
+    fn scan_memory_warehouse_ignores_malformed_legacy_memory_id_files() {
+        let ctx = TestCtx::new();
+        let entry_dir = ctx.cfg.memory_warehouse.join("alpha");
+        fs::create_dir_all(&entry_dir).unwrap();
+        fs::write(entry_dir.join(".memory-id"), "not-a-number").unwrap();
+
+        let entries = scan_memory_warehouse(&ctx.cfg).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "alpha");
+        assert!(entries[0].stable_id > 0);
+    }
+
+    #[test]
+    fn create_memory_rejects_dot_prefixed_id() {
+        let ctx = TestCtx::new();
+
+        let err = create_memory(
+            &ctx.cfg,
+            CreateMemoryRequest {
+                id: ".hidden".into(),
+            },
+        )
+        .unwrap_err();
+
+        match err {
+            CoreError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput),
+            other => panic!("expected InvalidInput IO error, got {other:?}"),
+        }
+        assert!(!ctx.cfg.memory_warehouse.join(".hidden").exists());
+        assert!(scan_memory_warehouse(&ctx.cfg).unwrap().is_empty());
+    }
+
+    #[test]
+    fn rename_memory_rejects_dot_prefixed_id() {
+        let ctx = TestCtx::new();
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+
+        let err = rename_memory(&ctx.cfg, created.stable_id, ".hidden").unwrap_err();
+
+        match err {
+            CoreError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput),
+            other => panic!("expected InvalidInput IO error, got {other:?}"),
+        }
+        assert!(ctx.cfg.memory_warehouse.join("alpha").exists());
+        assert!(!ctx.cfg.memory_warehouse.join(".hidden").exists());
+        let rescanned = scan_memory_warehouse(&ctx.cfg).unwrap();
+        let alpha = rescanned.iter().find(|entry| entry.id == "alpha").unwrap();
+        assert_eq!(alpha.stable_id, created.stable_id);
+    }
+
+    #[test]
+    fn create_rename_delete_memory_roundtrip() {
+        let ctx = TestCtx::new();
+
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        assert_eq!(created.id, "alpha");
+        assert_eq!(
+            created.memory_md_path,
+            ctx.cfg.memory_warehouse.join("alpha").join("MEMORY.md")
+        );
+        assert!(!created.path.join(".memory-id").exists());
+
+        let scanned = scan_memory_warehouse(&ctx.cfg).unwrap();
+        let scanned_alpha = scanned.iter().find(|entry| entry.id == "alpha").unwrap();
+        assert_eq!(scanned_alpha.stable_id, created.stable_id);
+
+        let renamed = rename_memory(&ctx.cfg, created.stable_id, "beta").unwrap();
+        assert_eq!(renamed.stable_id, created.stable_id);
+        assert_eq!(renamed.id, "beta");
+        assert!(!ctx.cfg.memory_warehouse.join("alpha").exists());
+        assert!(ctx.cfg.memory_warehouse.join("beta").exists());
+
+        let rescanned = scan_memory_warehouse(&ctx.cfg).unwrap();
+        let rescanned_beta = rescanned.iter().find(|entry| entry.id == "beta").unwrap();
+        assert_eq!(rescanned_beta.stable_id, created.stable_id);
+
+        delete_memory(&ctx.cfg, renamed.stable_id).unwrap();
+
+        assert!(!ctx.cfg.memory_warehouse.join("alpha").exists());
+        assert!(!ctx.cfg.memory_warehouse.join("beta").exists());
+        assert!(scan_memory_warehouse(&ctx.cfg).unwrap().is_empty());
+    }
+
+    #[test]
+    fn import_dropped_memory_from_memory_md_file() {
+        let ctx = TestCtx::new();
+        let dropped_root = ctx.tmp.path().join("dropped-memory");
+        fs::create_dir_all(&dropped_root).unwrap();
+        let dropped = dropped_root.join("MEMORY.md");
+        fs::write(&dropped, "project memory").unwrap();
+
+        let imported = import_dropped_memory(&ctx.cfg, &dropped).unwrap();
+
+        assert!(imported.path.join("MEMORY.md").exists());
+        assert_eq!(
+            fs::read_to_string(imported.path.join("MEMORY.md")).unwrap(),
+            "project memory"
+        );
+    }
+
+    #[test]
+    fn import_dropped_memory_accepts_agents_symlink_and_reuses_existing_memory() {
+        let ctx = TestCtx::new();
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        fs::write(&created.memory_md_path, "remember this").unwrap();
+
+        init_memory(
+            ctx.project.as_path(),
+            ClientKind::Claude,
+            created.stable_id,
+            &ctx.cfg,
+        )
+        .unwrap();
+
+        let imported = import_dropped_memory(&ctx.cfg, &ctx.project.join("AGENTS.md")).unwrap();
+
+        assert_eq!(imported.stable_id, created.stable_id);
+        assert_eq!(imported.id, created.id);
+        assert_eq!(scan_memory_warehouse(&ctx.cfg).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn import_dropped_memory_accepts_agents_and_claude_md_files() {
+        let ctx = TestCtx::new();
+
+        for file_name in ["AGENTS.md", "CLAUDE.md"] {
+            let dropped_root = ctx
+                .tmp
+                .path()
+                .join(format!("dropped-{}", file_name.to_lowercase()));
+            fs::create_dir_all(&dropped_root).unwrap();
+            let dropped = dropped_root.join(file_name);
+            fs::write(&dropped, format!("{file_name} content")).unwrap();
+
+            let imported = import_dropped_memory(&ctx.cfg, &dropped).unwrap();
+
+            assert_eq!(
+                imported.id,
+                dropped_root.file_name().unwrap().to_string_lossy()
+            );
+            assert_eq!(
+                fs::read_to_string(imported.path.join("MEMORY.md")).unwrap(),
+                format!("{file_name} content")
+            );
+        }
+    }
+
+    #[test]
+    fn generate_init_memory_command_uses_client_and_memory_id() {
+        let command = generate_init_memory_command(ClientKind::Claude, 12);
+
+        assert_eq!(
+            command,
+            "agents-manager init-memory --client claude --memory 12 --project ."
+        );
+    }
+
+    #[test]
+    fn import_dropped_memory_accepts_directory_and_copies_directory_contents() {
+        let ctx = TestCtx::new();
+        let dropped_root = ctx.tmp.path().join("dropped").join("dragged-memory");
+        fs::create_dir_all(dropped_root.join("nested")).unwrap();
+        fs::write(dropped_root.join("MEMORY.md"), "project memory").unwrap();
+        fs::write(dropped_root.join("notes.txt"), "hello").unwrap();
+        fs::write(dropped_root.join("nested").join("extra.md"), "more").unwrap();
+
+        let imported = import_dropped_memory(&ctx.cfg, &dropped_root).unwrap();
+
+        assert_eq!(imported.id, "dragged-memory");
+        assert_eq!(
+            fs::read_to_string(imported.path.join("MEMORY.md")).unwrap(),
+            "project memory"
+        );
+        assert_eq!(
+            fs::read_to_string(imported.path.join("notes.txt")).unwrap(),
+            "hello"
+        );
+        assert_eq!(
+            fs::read_to_string(imported.path.join("nested").join("extra.md")).unwrap(),
+            "more"
+        );
+    }
+
+    #[test]
+    fn import_dropped_memory_rejects_invalid_source_path() {
+        let ctx = TestCtx::new();
+        let missing_parent = ctx.tmp.path().join("imports");
+        let missing = missing_parent.join("MEMORY.md");
+
+        let error = import_dropped_memory(&ctx.cfg, &missing).unwrap_err();
+
+        match error {
+            CoreError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput),
+            other => panic!("expected InvalidInput IO error, got {other:?}"),
+        }
+        assert!(!ctx.cfg.memory_warehouse.join("imports").exists());
+        assert!(scan_memory_warehouse(&ctx.cfg).unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn import_dropped_memory_cleans_up_created_entry_when_copy_fails() {
+        let ctx = TestCtx::new();
+        let dropped_root = ctx.tmp.path().join("dropped").join("broken-memory");
+        fs::create_dir_all(&dropped_root).unwrap();
+        fs::write(dropped_root.join("MEMORY.md"), "project memory").unwrap();
+        std::os::unix::fs::symlink(
+            dropped_root.join("missing.txt"),
+            dropped_root.join("broken-link.txt"),
+        )
+        .unwrap();
+
+        let error = import_dropped_memory(&ctx.cfg, &dropped_root).unwrap_err();
+
+        match error {
+            CoreError::Io(error) => assert_eq!(error.kind(), std::io::ErrorKind::NotFound),
+            other => panic!("expected NotFound IO error, got {other:?}"),
+        }
+        assert!(!ctx.cfg.memory_warehouse.join("broken-memory").exists());
+        let registry =
+            fs::read_to_string(ctx.cfg.memory_warehouse.join(".memory-registry.toml")).unwrap();
+        assert!(!registry.contains("broken-memory"));
+        assert!(scan_memory_warehouse(&ctx.cfg).unwrap().is_empty());
+    }
+
+    #[test]
+    fn init_memory_writes_client_target_from_memory_md() {
+        let ctx = TestCtx::new();
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        fs::write(created.memory_md_path.clone(), "remember this").unwrap();
+
+        init_memory(
+            ctx.project.as_path(),
+            ClientKind::Claude,
+            created.stable_id,
+            &ctx.cfg,
+        )
+        .unwrap();
+
+        let agents = ctx.project.join("AGENTS.md");
+        let claude = ctx.project.join("CLAUDE.md");
+
+        assert!(fs::symlink_metadata(&agents)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(fs::symlink_metadata(&claude)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_link(&agents).unwrap(), created.memory_md_path);
+        assert_eq!(fs::read_link(&claude).unwrap(), PathBuf::from("AGENTS.md"));
+        assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
+    }
+
+    #[test]
+    fn init_memory_rejects_existing_target_file() {
+        let ctx = TestCtx::new();
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        fs::write(created.memory_md_path.clone(), "remember this").unwrap();
+        fs::write(ctx.project.join("AGENTS.md"), "existing").unwrap();
+
+        let error = init_memory(
+            ctx.project.as_path(),
+            ClientKind::Codex,
+            created.stable_id,
+            &ctx.cfg,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, CoreError::DestConflict(_)));
+    }
+
+    #[test]
+    fn init_memory_for_cursor_creates_claude_alias_to_agents() {
+        let ctx = TestCtx::new();
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        fs::write(created.memory_md_path.clone(), "remember this").unwrap();
+
+        init_memory(
+            ctx.project.as_path(),
+            ClientKind::Cursor,
+            created.stable_id,
+            &ctx.cfg,
+        )
+        .unwrap();
+
+        let agents = ctx.project.join("AGENTS.md");
+        let claude = ctx.project.join("CLAUDE.md");
+
+        assert!(fs::symlink_metadata(&agents)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(fs::symlink_metadata(&claude)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_link(&agents).unwrap(), created.memory_md_path);
+        assert_eq!(fs::read_link(&claude).unwrap(), PathBuf::from("AGENTS.md"));
+    }
+
+    #[test]
+    fn init_memory_rejects_existing_claude_alias_target() {
+        let ctx = TestCtx::new();
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        fs::write(created.memory_md_path.clone(), "remember this").unwrap();
+        fs::write(ctx.project.join("CLAUDE.md"), "existing").unwrap();
+
+        let error = init_memory(
+            ctx.project.as_path(),
+            ClientKind::Claude,
+            created.stable_id,
+            &ctx.cfg,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, CoreError::DestConflict(_)));
+    }
+
+    #[test]
+    fn init_memory_rejects_invalid_project_root() {
+        let ctx = TestCtx::new();
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        fs::write(created.memory_md_path.clone(), "remember this").unwrap();
+        let invalid_project = ctx.project.join("missing-project");
+
+        let error = init_memory(
+            invalid_project.as_path(),
+            ClientKind::Claude,
+            created.stable_id,
+            &ctx.cfg,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CoreError::InvalidProject(path) if path == invalid_project
+        ));
+    }
+
+    #[test]
+    fn copy_paths_into_skill_preserves_existing_files_by_refusing_overwrite() {
+        let ctx = TestCtx::new();
+        let created = create_skill(
+            &ctx.cfg,
+            CreateSkillRequest {
+                id: "alpha".into(),
+                name: None,
+                description: None,
+            },
+        )
+        .unwrap();
+        fs::write(created.path.join("notes.txt"), "old").unwrap();
+
+        let dropped = ctx.tmp.path().join("notes.txt");
+        fs::write(&dropped, "new").unwrap();
+
+        let error = copy_paths_into_entry(&created.path, "", &[dropped]).unwrap_err();
+
+        assert!(matches!(error, CoreError::DestConflict(_)));
+    }
+
+    #[test]
+    fn delete_skill_removes_skill_directory_by_stable_id() {
+        let ctx = TestCtx::new();
+        ctx.create_skill("alpha");
+        let created = scan_warehouse(&ctx.cfg)
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.id == "alpha")
+            .unwrap();
+
+        delete_skill(&ctx.cfg, created.stable_id).unwrap();
+
+        let rescanned = scan_warehouse(&ctx.cfg).unwrap();
+        assert!(!ctx.cfg.skill_warehouse.join("alpha").exists());
+        assert!(!rescanned.iter().any(|entry| entry.id == "alpha"));
+    }
+
+    #[test]
+    fn import_dropped_skill_accepts_skill_md_without_copying_unrelated_parent_contents() {
+        let ctx = TestCtx::new();
+        let dropped_root = ctx.tmp.path().join("dropped").join("downloads");
+        fs::create_dir_all(dropped_root.join("nested")).unwrap();
+        fs::write(
+            dropped_root.join("SKILL.md"),
+            "---\nname: dragged-skill\ndescription: dragged in\n---\nbody",
+        )
+        .unwrap();
+        fs::write(dropped_root.join("notes.txt"), "hello").unwrap();
+        fs::write(dropped_root.join("nested").join("extra.md"), "more").unwrap();
+
+        let imported = import_dropped_skill(&ctx.cfg, &dropped_root.join("SKILL.md")).unwrap();
+
+        assert_eq!(imported.id, "dragged-skill");
+        assert!(ctx
+            .cfg
+            .skill_warehouse
+            .join("dragged-skill")
+            .join("SKILL.md")
+            .exists());
+        assert!(!ctx
+            .cfg
+            .skill_warehouse
+            .join("dragged-skill")
+            .join("notes.txt")
+            .exists());
+        assert!(!ctx
+            .cfg
+            .skill_warehouse
+            .join("dragged-skill")
+            .join("nested")
+            .join("extra.md")
+            .exists());
+    }
+
+    #[test]
+    fn import_dropped_skill_accepts_directory_and_copies_directory_contents() {
+        let ctx = TestCtx::new();
+        let dropped_root = ctx.tmp.path().join("dropped").join("dragged-skill");
+        fs::create_dir_all(dropped_root.join("nested")).unwrap();
+        fs::write(
+            dropped_root.join("SKILL.md"),
+            "---\nname: dragged-skill\ndescription: dragged in\n---\nbody",
+        )
+        .unwrap();
+        fs::write(dropped_root.join("notes.txt"), "hello").unwrap();
+        fs::write(dropped_root.join("nested").join("extra.md"), "more").unwrap();
+
+        let imported = import_dropped_skill(&ctx.cfg, &dropped_root).unwrap();
+
+        assert_eq!(imported.id, "dragged-skill");
+        assert_eq!(
+            fs::read_to_string(
+                ctx.cfg
+                    .skill_warehouse
+                    .join("dragged-skill")
+                    .join("notes.txt")
+            )
+            .unwrap(),
+            "hello"
+        );
+        assert_eq!(
+            fs::read_to_string(
+                ctx.cfg
+                    .skill_warehouse
+                    .join("dragged-skill")
+                    .join("nested")
+                    .join("extra.md")
+            )
+            .unwrap(),
+            "more"
+        );
+    }
+
+    #[test]
+    fn rename_skill_moves_directory_and_preserves_stable_id() {
+        let ctx = TestCtx::new();
+        ctx.create_skill("alpha");
+        let created = scan_warehouse(&ctx.cfg)
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.id == "alpha")
+            .unwrap();
+
+        let renamed = rename_skill(&ctx.cfg, created.stable_id, "beta").unwrap();
+
+        assert_eq!(renamed.stable_id, created.stable_id);
+        assert_eq!(renamed.id, "beta");
+        assert!(!ctx.cfg.skill_warehouse.join("alpha").exists());
+        assert!(ctx.cfg.skill_warehouse.join("beta").exists());
+    }
+
+    #[test]
     fn client_global_targets_resolve_expected_paths() {
         let roots = ClientRoots::from_home(std::path::Path::new("/tmp/home"));
         assert_eq!(
@@ -521,10 +1069,17 @@ mod tests {
         assert_eq!(report.discovered, 2);
         assert_eq!(report.imported, 2);
         assert!(ctx.cfg.skill_warehouse.join("foo/SKILL.md").exists());
-        assert!(ctx.cfg.skill_warehouse.join("prompts-bar/SKILL.md").exists());
+        assert!(ctx
+            .cfg
+            .skill_warehouse
+            .join("prompts-bar/SKILL.md")
+            .exists());
         assert!(scanned.iter().any(|skill| skill.id == "foo"));
         assert!(scanned.iter().any(|skill| skill.id == "prompts-bar"));
-        let imported = scanned.iter().find(|skill| skill.id == "prompts-bar").unwrap();
+        let imported = scanned
+            .iter()
+            .find(|skill| skill.id == "prompts-bar")
+            .unwrap();
         let expected_source_hint = format!("git:{}#prompts/bar", repo.path().display());
         assert_eq!(
             imported.source_hint.as_deref(),

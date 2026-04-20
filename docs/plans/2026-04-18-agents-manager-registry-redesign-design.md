@@ -146,53 +146,86 @@ Memory files remain:
 
 ## Desktop Information Architecture
 
-The desktop client should become a warehouse workspace with four major areas:
+The desktop client should become a single-window application with a persistent navigation rail and page-based workflows. It should feel like a desktop tool, not a dashboard that stacks every control into one screen.
 
-### 1. Skill Navigator
+### Shell Structure
 
-The left rail shows warehouse skills only.
+The shell has three persistent layers:
 
-It supports:
+1. left navigation rail
+2. top header for page title, selected skill summary, and global action status
+3. one focused page body at a time
 
-- search by name or ID
+This keeps all core workflows in one window while avoiding the crowding caused by the previous three-column all-in-one layout.
+
+### Navigation Pages
+
+#### 1. Skills
+
+This is the default landing page.
+
+It focuses on warehouse browsing and discovery:
+
+- search by name or stable ID
 - grouping by `skill_type`
 - tag filtering
-- per-skill summary chips for type, tags, and target sync state
+- compact skill cards with type, tags, and source summary
+- quick selection that routes into the editor page
 
-Grouping should be visual and obvious, not just a flat list with secondary labels.
+The page should prioritize scanability and discovery over editing controls.
 
-### 2. Skill Tree And Editor
+#### 2. Editor
 
-The middle workspace shows:
+This page focuses on working on one selected skill.
 
-- selected skill file tree
-- selected file editor
-- file/folder create, rename, delete
+It contains:
+
+- selected skill summary
+- file tree
+- text editor
+- file and folder actions
+- registry metadata editing for `skill_type` and tags
 
 Phase one still limits inline editing to text files.
 
-### 3. Metadata And Distribution Panel
+#### 3. Sync
 
-The right rail shows:
+This page focuses on distribution and project setup.
 
-- stable ID
-- editable `skill_type`
-- editable tags
-- target client picker
+It contains:
+
+- client selection
+- selected skill list
 - sync action
 - generated `init-project` command
+- install mode and target summary where relevant
 
-Metadata edits update registry only.
+Users should understand that warehouse content is being pushed outward to clients and projects.
 
-### 4. Migration And System Actions
+#### 4. Migration
 
-The shell includes a clear migration action area with:
+This page focuses on legacy import.
 
-- one-time migration status
+It contains:
+
+- one-time bootstrap migration state
 - manual migration button
 - migration result summary
+- source roots being scanned
 
-Users should understand when migration has already happened and when they are explicitly running it again.
+Users should understand that automatic migration only happens once and later migration is a manual action.
+
+#### 5. Settings
+
+This page focuses on application-owned paths and environment context.
+
+It contains:
+
+- warehouse path
+- registry path
+- client root paths
+- migration state summary
+- any read-only environment diagnostics needed to explain sync behavior
 
 ## UI Direction
 
@@ -200,13 +233,14 @@ This redesign is also a visual refresh.
 
 The new interface should:
 
-- preserve the current warm editorial palette only if it still fits the warehouse workspace
-- feel more like a toolbench than a profile form
-- make grouped navigation, filters, and editing hierarchy obvious at a glance
-- improve information density without collapsing into cramped admin UI
-- keep strong desktop readability and usable mobile-width fallback behavior
+- feel like a dedicated desktop client with stronger structural hierarchy
+- avoid equal-weight cards competing for attention on one screen
+- use navigation and page transitions to separate browse, edit, sync, migration, and settings concerns
+- preserve the warm material palette only where it supports clarity
+- improve spacing, typography, and section rhythm so the app feels less cramped
+- keep strong desktop readability and usable narrow-width fallback behavior
 
-The page should move away from "stacked forms plus output box" into a deliberate workspace layout with clearer hierarchy, stronger grouping, and more discoverable actions.
+The visual target is a desktop tool with deliberate structure, not a generic admin form and not a single giant workspace that exposes every control at once.
 
 ## Persistence
 
@@ -265,6 +299,7 @@ Phase one includes:
 - client sync for Codex / Claude / Cursor
 - generated `init-project` command flow
 - desktop grouped skill list, filters, tree view, text editor, and metadata editing
+- desktop multi-page shell with `Skills`, `Editor`, `Sync`, `Migration`, and `Settings`
 - desktop page polish aligned with the new workflow
 
 Phase one excludes:

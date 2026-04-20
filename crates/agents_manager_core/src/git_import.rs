@@ -70,10 +70,7 @@ pub fn import_git_skills(cfg: &AppConfig, repo_url: &str) -> Result<GitImportRep
         }
 
         copy_dir_all(&source_dir, &destination_dir)?;
-        imported_source_hints.push((
-            destination_dir,
-            format!("git:{repo_url}#{relative_text}"),
-        ));
+        imported_source_hints.push((destination_dir, format!("git:{repo_url}#{relative_text}")));
         report.imported += 1;
         report.details.push(GitImportDetail {
             relative_path: relative_text,
@@ -173,7 +170,10 @@ fn dir_digest(root: &Path) -> Result<String> {
     let mut hasher = Sha256::new();
     let mut files = Vec::new();
 
-    for entry in WalkDir::new(root).into_iter().filter_map(|entry| entry.ok()) {
+    for entry in WalkDir::new(root)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
         if entry.file_type().is_file() {
             files.push(entry.into_path());
         }
