@@ -12,6 +12,16 @@
 
 ## [Unreleased]
 
+## [v0.1.1] - 2026-04-20
+
+### Fixed
+
+- 修复 macOS 桌面包未显式声明应用图标的问题，确保 bundle 中写入 `icon.icns` 并在 `Info.plist` 中声明图标字段。
+
+### Changed
+
+- 调整桌面端 Tauri bundling 配置，便于后续生成带图标资源的安装包。
+
 ## [v0.1.0] - 2026-04-20
 
 ### Added

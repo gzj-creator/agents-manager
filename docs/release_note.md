@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.1.1 - 2026-04-20
+
+- 版本级别：小版本
+- Git 提交消息：`fix: 修复 macOS 安装包图标`
+- Git Tag：`v0.1.1`
+
+### 变更摘要
+
+- 修复 macOS 桌面 bundle 没有显式包含 `icon.icns` 的问题。
+- 为桌面端补充 `Info.plist` 图标声明，确保安装后的应用显示新的 agents-manager 图标。
+
 ## v0.1.0 - 2026-04-20
 
 - 版本级别：中版本
