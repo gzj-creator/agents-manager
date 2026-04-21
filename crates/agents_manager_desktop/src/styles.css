@@ -387,11 +387,13 @@ textarea {
 
 .page-grid--memory > [data-role="memory-sidebar"] {
   background: rgba(255, 251, 245, 0.46);
+  backdrop-filter: none;
 }
 
 .page-grid--memory > [data-role="memory-metadata-panel"] {
   border-left: 1px solid rgba(74, 57, 36, 0.12);
   background: rgba(245, 237, 224, 0.7);
+  backdrop-filter: none;
 }
 
 .page-grid--editor > .sidebar-panel {
@@ -429,7 +431,7 @@ textarea {
 
 .skill-list {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   max-height: calc(100vh - 280px);
   overflow: auto;
   padding-right: 6px;
@@ -437,32 +439,32 @@ textarea {
 
 .skill-group {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .skill-group__head {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .skill-group__items {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .skill-row-shell {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
+  gap: 8px;
   align-items: stretch;
 }
 
 .skill-row-stack,
 .explorer-skill-stack {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -470,10 +472,10 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  width: 32px;
   min-height: 100%;
   border: 1px solid rgba(74, 57, 36, 0.12);
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(255, 251, 245, 0.7);
   cursor: pointer;
 }
@@ -485,10 +487,10 @@ textarea {
 }
 
 .skill-row-check__box {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border: 1.5px solid rgba(74, 57, 36, 0.3);
-  border-radius: 5px;
+  border-radius: 4px;
   background: rgba(255, 251, 245, 0.96);
 }
 
@@ -499,11 +501,13 @@ textarea {
 }
 
 .skill-row {
+  display: grid;
+  gap: 8px;
   width: 100%;
   border: 1px solid rgba(74, 57, 36, 0.12);
   border-radius: var(--radius-lg);
   background: var(--surface-strong);
-  padding: 14px;
+  padding: 10px 12px;
   text-align: left;
   cursor: pointer;
 }
@@ -519,24 +523,24 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .skill-row__main span {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .type-pill,
 .tag-chip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 999px;
   background: var(--surface-muted);
   color: var(--text);
-  font-size: 0.8rem;
+  font-size: 0.76rem;
 }
 
 .tag-chip--muted {
@@ -546,7 +550,7 @@ textarea {
 .tag-strip {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
 }
 
 .editor-workspace {
@@ -964,6 +968,41 @@ textarea {
   background: rgba(155, 77, 37, 0.1);
 }
 
+.app-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+}
+
+.app-modal__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(48, 38, 26, 0.18);
+}
+
+.app-modal__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid rgba(74, 57, 36, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 251, 245, 0.98);
+  box-shadow: 0 22px 50px rgba(71, 49, 18, 0.18);
+}
+
+.app-modal__dialog h3 {
+  margin: 0;
+}
+
+.app-modal__dialog .sidebar-copy {
+  margin: 0;
+}
+
 .tree-view,
 .output-console,
 #generatedCommand,
@@ -1195,8 +1234,8 @@ textarea:focus {
 }
 
 .memory-sidebar {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
@@ -1207,6 +1246,7 @@ textarea:focus {
 }
 
 .memory-list {
+  flex: 1;
   display: grid;
   gap: 6px;
   align-content: start;

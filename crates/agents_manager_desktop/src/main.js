@@ -23,6 +23,12 @@ import {
   nextMemoryDraftState,
   nextPathDraftState,
   nextSkillDraftState,
+  isDroppedSkillAlreadyExistsError,
+  prioritizeDroppedSkillImportPaths,
+  renderDroppedSkillImportConfirmHtml,
+  renderMemoryContextMenuHtml,
+  renderMemoryRenameModalHtml,
+  resolveDroppedSkillImportCollision,
   resolveEditorGroupKey,
   renderExplorerGroupListHtml,
   renderMemoryListHtml,
@@ -37,6 +43,7 @@ import {
 const app = document.getElementById('app')
 let copyFeedbackTimer = null
 let memoryCopyFeedbackTimer = null
+const ACTION_CANCELLED = Symbol('action-cancelled')
 
 function createSkillInteractionState() {
   return {
@@ -65,6 +72,33 @@ function createWarehouseContextMenuState() {
     tagKey: '',
     x: 0,
     y: 0
+  }
+}
+
+function createMemoryContextMenuState() {
+  return {
+    open: false,
+    memoryId: null,
+    x: 0,
+    y: 0
+  }
+}
+
+function createDroppedSkillImportConfirmState() {
+  return {
+    open: false,
+    name: '',
+    candidatePath: '',
+    targetSkillId: null
+  }
+}
+
+function createMemoryRenameState() {
+  return {
+    open: false,
+    memoryId: null,
+    draftId: '',
+    error: ''
   }
 }
 
@@ -97,6 +131,9 @@ const state = {
   memoryCopyFeedback: 'idle',
   memoryDraft: createMemoryDraftState(),
   memoryDeleteConfirmOpen: false,
+  memoryContextMenu: createMemoryContextMenuState(),
+  memoryRename: createMemoryRenameState(),
+  droppedSkillImportConfirm: createDroppedSkillImportConfirmState(),
   skillWarehouse: '',
   defaultSkillWarehouse: '',
   libraryRoots: [],
@@ -169,6 +206,7 @@ const ACTION_BUTTON_IDS = [
   'confirmDeleteMemory',
   'cancelDeleteMemory',
   'deleteSkill',
+  'openCreateSkill',
   'createSkill',
   'cancelCreateSkill',
   'createTreePath',
@@ -286,6 +324,7 @@ function clearActiveEditorEntry() {
 function closeEditorSession() {
   closeCreatePathDraft()
   closeWarehouseContextMenu()
+  closeMemoryContextMenu()
   closeSkillContextMenu()
   closeSkillInteraction()
   closeTreeContextMenu()
@@ -332,6 +371,8 @@ function closeCreateSkillDraft() {
 function openCreateMemoryDraft() {
   closeCreatePathDraft()
   closeWarehouseContextMenu()
+  closeMemoryContextMenu()
+  closeMemoryRenameDialog()
   closeSkillContextMenu()
   closeSkillInteraction()
   closeTreeContextMenu()
@@ -351,6 +392,8 @@ function openDeleteMemoryConfirm() {
   closeCreateMemoryDraft()
   closeCreatePathDraft()
   closeWarehouseContextMenu()
+  closeMemoryContextMenu()
+  closeMemoryRenameDialog()
   closeSkillContextMenu()
   closeSkillInteraction()
   closeTreeContextMenu()
@@ -479,6 +522,10 @@ function closeWarehouseContextMenu() {
   state.warehouseContextMenu = createWarehouseContextMenuState()
 }
 
+function closeMemoryContextMenu() {
+  state.memoryContextMenu = createMemoryContextMenuState()
+}
+
 function closeSkillInteraction() {
   state.skillInteraction = createSkillInteractionState()
 }
@@ -487,8 +534,50 @@ function closeTreeContextMenu() {
   state.treeContextMenu = createTreeContextMenuState()
 }
 
+function closeDroppedSkillImportConfirm() {
+  state.droppedSkillImportConfirm = createDroppedSkillImportConfirmState()
+}
+
+function closeMemoryRenameDialog() {
+  state.memoryRename = createMemoryRenameState()
+}
+
+function openDroppedSkillImportConfirm(conflict, candidatePath) {
+  state.droppedSkillImportConfirm = {
+    open: true,
+    name: conflict?.name || '',
+    candidatePath: candidatePath || '',
+    targetSkillId: conflict?.targetSkillId || null
+  }
+}
+
+function openMemoryRenameDialog(memoryId = state.memoryContextMenu.memoryId || state.selectedMemoryId) {
+  if (!memoryId) {
+    return
+  }
+
+  const memory = state.memories.find(entry => entry.stable_id === memoryId) || selectedMemory()
+  if (!memory) {
+    return
+  }
+
+  closeMemoryContextMenu()
+  closeTreeContextMenu()
+  state.selectedMemoryId = memory.stable_id
+  state.memoryRename = {
+    open: true,
+    memoryId: memory.stable_id,
+    draftId: memory.id,
+    error: ''
+  }
+}
+
 function skillContextMenuSkill() {
   return state.skills.find(skill => skill.stable_id === state.skillContextMenu.skillId) || null
+}
+
+function memoryContextMenuMemory() {
+  return state.memories.find(memory => memory.stable_id === state.memoryContextMenu.memoryId) || null
 }
 
 function openSkillContextMenu(stableId, x, y) {
@@ -496,6 +585,7 @@ function openSkillContextMenu(stableId, x, y) {
   closeCreateSkillDraft()
   closeCreatePathDraft()
   closeWarehouseContextMenu()
+  closeMemoryContextMenu()
   closeSkillInteraction()
   closeTreeContextMenu()
   state.skillContextMenu = {
@@ -506,10 +596,27 @@ function openSkillContextMenu(stableId, x, y) {
   }
 }
 
+function openMemoryContextMenu(stableId, x, y) {
+  state.selectedMemoryId = stableId
+  closeCreateMemoryDraft()
+  closeCreatePathDraft()
+  closeWarehouseContextMenu()
+  closeSkillContextMenu()
+  closeSkillInteraction()
+  closeTreeContextMenu()
+  state.memoryContextMenu = {
+    open: true,
+    memoryId: stableId,
+    x: Math.max(12, Math.round(x)),
+    y: Math.max(12, Math.round(y))
+  }
+}
+
 function openTreeContextMenu(context = {}, x, y) {
   closeCreateSkillDraft()
   closeCreatePathDraft()
   closeWarehouseContextMenu()
+  closeMemoryContextMenu()
   closeSkillContextMenu()
   closeSkillInteraction()
   state.treeContextMenu = {
@@ -524,6 +631,7 @@ function openTreeContextMenu(context = {}, x, y) {
 function openWarehouseContextMenu(context = {}, x, y) {
   closeCreateSkillDraft()
   closeCreatePathDraft()
+  closeMemoryContextMenu()
   closeSkillContextMenu()
   closeSkillInteraction()
   closeTreeContextMenu()
@@ -550,6 +658,7 @@ function beginSkillRename(stableId = state.selectedSkillId) {
   closeCreateSkillDraft()
   closeCreatePathDraft()
   closeWarehouseContextMenu()
+  closeMemoryContextMenu()
   closeSkillContextMenu()
   closeTreeContextMenu()
   state.skillInteraction = {
@@ -573,6 +682,7 @@ function beginSkillDelete(stableId = state.selectedSkillId) {
   closeCreateSkillDraft()
   closeCreatePathDraft()
   closeWarehouseContextMenu()
+  closeMemoryContextMenu()
   closeSkillContextMenu()
   closeTreeContextMenu()
   state.skillInteraction = {
@@ -620,6 +730,22 @@ function resetGeneratedMemoryCommand() {
 
 function memoryCopyFeedbackLabel() {
   return state.memoryCopyFeedback === 'copied' ? '已复制' : '复制'
+}
+
+function syncCommandCopyUi() {
+  const copyCommandButton = document.getElementById('copyCommand')
+  if (copyCommandButton) {
+    copyCommandButton.textContent = copyFeedbackLabel()
+    copyCommandButton.dataset.copyState = state.copyFeedback
+    copyCommandButton.disabled = state.action.busy || !state.generatedCommand
+  }
+
+  const copyMemoryCommandButton = document.getElementById('copyMemoryCommand')
+  if (copyMemoryCommandButton) {
+    copyMemoryCommandButton.textContent = memoryCopyFeedbackLabel()
+    copyMemoryCommandButton.dataset.copyState = state.memoryCopyFeedback
+    copyMemoryCommandButton.disabled = state.action.busy || !state.generatedMemoryCommand
+  }
 }
 
 function createMcpEditorState(server = null) {
@@ -672,10 +798,11 @@ function markCommandCopied() {
     window.clearTimeout(copyFeedbackTimer)
   }
   state.copyFeedback = 'copied'
+  syncCommandCopyUi()
   copyFeedbackTimer = window.setTimeout(() => {
     state.copyFeedback = 'idle'
     copyFeedbackTimer = null
-    syncAll()
+    syncCommandCopyUi()
   }, 1400)
 }
 
@@ -684,10 +811,11 @@ function markMemoryCommandCopied() {
     window.clearTimeout(memoryCopyFeedbackTimer)
   }
   state.memoryCopyFeedback = 'copied'
+  syncCommandCopyUi()
   memoryCopyFeedbackTimer = window.setTimeout(() => {
     state.memoryCopyFeedback = 'idle'
     memoryCopyFeedbackTimer = null
-    syncAll()
+    syncCommandCopyUi()
   }, 1400)
 }
 
@@ -740,7 +868,12 @@ function renderCurrentPage() {
       migrationOutput: state.migrationOutput,
       gitImportResult: state.gitImportResult,
       gitImportOutput: state.gitImportOutput,
+      createOpen: state.createSkill.open,
+      createId: state.createSkill.id,
+      createError: state.createSkill.error,
+      createTargetLabel: state.createSkillTargetLabel,
       skillContextMenu: activeSkillContextMenu,
+      warehouseContextMenu: state.warehouseContextMenu,
       skillInteraction: state.skillInteraction
     })
     return
@@ -917,6 +1050,11 @@ function syncActionUi() {
     createSkill.disabled = state.action.busy || !state.createSkill.id.trim()
   }
 
+  const openCreateSkill = document.getElementById('openCreateSkill')
+  if (openCreateSkill) {
+    openCreateSkill.disabled = state.action.busy || state.createSkill.open
+  }
+
   const createTreePath = document.getElementById('createTreePath')
   if (createTreePath) {
     createTreePath.disabled = state.action.busy || (
@@ -983,6 +1121,8 @@ function syncActionUi() {
     copyMemoryCommandButton.disabled = state.action.busy || !state.generatedMemoryCommand
   }
 
+  syncCommandCopyUi()
+
   const importGitSkillsButton = document.getElementById('importGitSkills')
   if (importGitSkillsButton) {
     importGitSkillsButton.disabled = state.action.busy || !state.gitImportUrl.trim()
@@ -1025,6 +1165,11 @@ async function runAction(action, task, options = {}) {
   transitionAction({ type: 'start', action })
   try {
     const result = await task()
+    if (result === ACTION_CANCELLED) {
+      state.action = createActionState()
+      syncActionUi()
+      return null
+    }
     transitionAction({ type: 'success', action })
     return result
   } catch (error) {
@@ -1164,10 +1309,27 @@ function syncSkillMetadata() {
   }
 }
 
+function syncAppOverlayUi() {
+  const modalRoot = document.getElementById('appModalRoot')
+  if (!modalRoot) {
+    return
+  }
+
+  modalRoot.innerHTML = [
+    renderDroppedSkillImportConfirmHtml(state.droppedSkillImportConfirm),
+    renderMemoryRenameModalHtml(state.memoryRename),
+    renderMemoryContextMenuHtml({
+      ...state.memoryContextMenu,
+      memory: memoryContextMenuMemory()
+    })
+  ].join('')
+}
+
 function syncAll() {
   state.currentPage = normalizePageId(state.currentPage)
   syncShell()
   renderCurrentPage()
+  syncAppOverlayUi()
   syncActionUi()
   syncSkillsPage()
   syncEditorExplorer()
@@ -1176,6 +1338,7 @@ function syncAll() {
   syncSkillMetadata()
   syncSkillInteractionUi()
   syncCreateSkillUi()
+  syncMemoryRenameUi()
   syncCreatePathUi()
 }
 
@@ -1199,6 +1362,20 @@ function syncCreateSkillUi() {
   }
 
   const input = document.getElementById('createSkillId')
+  if (!input || document.activeElement === input) {
+    return
+  }
+
+  input.focus()
+  input.select()
+}
+
+function syncMemoryRenameUi() {
+  if (!state.memoryRename.open) {
+    return
+  }
+
+  const input = document.getElementById('memoryRenameInput')
   if (!input || document.activeElement === input) {
     return
   }
@@ -1299,6 +1476,7 @@ async function loadMemories() {
   const previousSelectedMemoryId = state.selectedMemoryId
   const data = await invoke('list_warehouse_memories_cmd')
   state.memories = data
+  const availableIds = new Set(data.map(memory => memory.stable_id))
 
   if (!state.selectedMemoryId && data.length) {
     state.selectedMemoryId = data[0].stable_id
@@ -1311,6 +1489,13 @@ async function loadMemories() {
   if (previousSelectedMemoryId !== state.selectedMemoryId) {
     resetGeneratedMemoryCommand()
     closeDeleteMemoryConfirm()
+  }
+
+  if (state.memoryContextMenu.open && !availableIds.has(state.memoryContextMenu.memoryId)) {
+    closeMemoryContextMenu()
+  }
+  if (state.memoryRename.open && !availableIds.has(state.memoryRename.memoryId)) {
+    closeMemoryRenameDialog()
   }
 
   if (state.activeEditorEntry.kind === 'memory' && !state.selectedMemoryId) {
@@ -2020,18 +2205,8 @@ async function importGitSkills() {
   syncAll()
 }
 
-async function importDroppedSkillFromPaths(paths = []) {
-  const candidate = paths.find(path => /(?:^|[\\/])SKILL\.md$/i.test(path)) || paths[0]
-  if (!candidate) {
-    throw new Error('没有检测到可导入的 skill 路径')
-  }
-
-  const imported = await invoke('import_dropped_skill_cmd', {
-    req: {
-      path: candidate
-    }
-  })
-
+async function completeDroppedSkillImport(imported, conflict = {}) {
+  closeDroppedSkillImportConfirm()
   state.currentPage = 'editor'
   state.editorSidebarMode = 'tree'
   state.editorGroupKey = editorGroupKeyForSkill(imported)
@@ -2043,7 +2218,99 @@ async function importDroppedSkillFromPaths(paths = []) {
   resetEditorSelection()
   await loadSkills()
   syncAll()
-  print(`已导入 ${imported.id}，文件树已打开。`, 'success')
+  print(
+    conflict.mode === 'confirm-overwrite'
+      ? `已覆盖同名 Skill ${conflict.name}，文件树已打开。`
+      : `已导入 ${imported.id}，文件树已打开。`,
+    'success'
+  )
+}
+
+async function confirmDroppedSkillImport() {
+  const { candidatePath, targetSkillId, name } = state.droppedSkillImportConfirm
+  if (!candidatePath || !targetSkillId) {
+    closeDroppedSkillImportConfirm()
+    syncAll()
+    return ACTION_CANCELLED
+  }
+
+  const imported = await invoke('import_dropped_skill_cmd', {
+    req: {
+      path: candidatePath,
+      overwrite_stable_id: targetSkillId
+    }
+  })
+
+  await completeDroppedSkillImport(imported, {
+    mode: 'confirm-overwrite',
+    name,
+    targetSkillId
+  })
+}
+
+async function importDroppedSkillFromPaths(paths = []) {
+  let candidate = ''
+  let droppedSkill = null
+  let lastPreviewError = null
+  for (const path of prioritizeDroppedSkillImportPaths(paths)) {
+    try {
+      droppedSkill = await invoke('preview_dropped_skill_cmd', {
+        req: {
+          path
+        }
+      })
+      candidate = path
+      break
+    } catch (error) {
+      lastPreviewError = error
+    }
+  }
+  if (!candidate || !droppedSkill) {
+    throw lastPreviewError || new Error('没有检测到可导入的 skill 路径')
+  }
+
+  let conflict = resolveDroppedSkillImportCollision(state.skills, droppedSkill)
+  switch (conflict.mode) {
+    case 'confirm-overwrite': {
+      openDroppedSkillImportConfirm(conflict, candidate)
+      syncAll()
+      return ACTION_CANCELLED
+    }
+    case 'ambiguous-name':
+      throw new Error(`存在多个同名 Skill「${conflict.name}」，请先手动整理后再导入`)
+    default:
+      break
+  }
+
+  let imported
+  try {
+    imported = await invoke('import_dropped_skill_cmd', {
+      req: {
+        path: candidate,
+        overwrite_stable_id: conflict.targetSkillId || null
+      }
+    })
+  } catch (error) {
+    if (!conflict.targetSkillId && isDroppedSkillAlreadyExistsError(error)) {
+      await loadSkills()
+      conflict = resolveDroppedSkillImportCollision(state.skills, droppedSkill)
+      switch (conflict.mode) {
+        case 'confirm-overwrite': {
+          openDroppedSkillImportConfirm(conflict, candidate)
+          syncAll()
+          return ACTION_CANCELLED
+        }
+        case 'ambiguous-name':
+          throw new Error(`存在多个同名 Skill「${conflict.name}」，请先手动整理后再导入`)
+        default:
+          throw error
+      }
+    } else {
+      throw error
+    }
+  }
+
+  await completeDroppedSkillImport(imported, conflict)
 }
 
 function shouldImportDroppedPathsAsMemory(paths = []) {
@@ -2066,6 +2333,7 @@ async function importDroppedMemoryFromPaths(paths = []) {
   clearActiveEditorEntry()
   closeCreateMemoryDraft()
   closeDeleteMemoryConfirm()
+  closeMemoryContextMenu()
   closeCreatePathDraft()
   closeWarehouseContextMenu()
   closeTreeContextMenu()
@@ -2090,6 +2358,7 @@ async function createMemory() {
 
   state.memoryDraft = nextMemoryDraftState(state.memoryDraft, { type: 'created' })
   closeDeleteMemoryConfirm()
+  closeMemoryContextMenu()
   state.selectedMemoryId = created.stable_id
   resetGeneratedMemoryCommand()
   await loadMemories()
@@ -2109,6 +2378,7 @@ async function deleteMemory() {
     }
   })
 
+  closeMemoryContextMenu()
   closeDeleteMemoryConfirm()
   if (state.activeEditorEntry.kind === 'memory' && activeEditorStableId() === memory.stable_id) {
     clearActiveEditorEntry()
@@ -2118,6 +2388,54 @@ async function deleteMemory() {
   await loadMemories()
   syncAll()
   print(`Memory ${memory.id} 已删除。`, 'success')
+}
+
+async function renameMemory() {
+  const targetMemoryId = state.memoryRename.memoryId || state.memoryContextMenu.memoryId || state.selectedMemoryId
+  if (!targetMemoryId) {
+    throw new Error('请先选择一个 memory')
+  }
+
+  const memory =
+    state.memories.find(entry => entry.stable_id === targetMemoryId) || selectedMemory()
+  if (!memory) {
+    throw new Error('当前 memory 不存在')
+  }
+
+  const nextId = state.memoryRename.draftId.trim()
+  closeMemoryContextMenu()
+  closeTreeContextMenu()
+
+  if (!nextId) {
+    throw new Error('请输入 Memory ID')
+  }
+
+  if (nextId === memory.id) {
+    closeMemoryRenameDialog()
+    syncAll()
+    return
+  }
+
+  const renamed = await invoke('rename_memory_cmd', {
+    req: {
+      stable_id: targetMemoryId,
+      id: nextId
+    }
+  })
+
+  closeDeleteMemoryConfirm()
+  closeMemoryRenameDialog()
+  resetGeneratedMemoryCommand()
+  await loadMemories()
+  if (
+    state.activeEditorEntry.kind === 'memory' &&
+    activeEditorStableId() === targetMemoryId &&
+    showingEditorTree()
+  ) {
+    await loadTree(activeEditorStableId())
+  }
+  syncAll()
+  print(`Memory ${memory.id} 已重命名为 ${renamed.id}。`, 'success')
 }
 
 async function syncSkills() {
@@ -2200,7 +2518,6 @@ async function copyGeneratedCommand() {
 
   await copyTextToClipboard(state.generatedCommand)
   markCommandCopied()
-  syncAll()
   return
 }
 
@@ -2211,7 +2528,6 @@ async function copyGeneratedMemoryCommand() {
 
   await copyTextToClipboard(state.generatedMemoryCommand)
   markMemoryCommandCopied()
-  syncAll()
 }
 
 async function openSelectedSkillInEditor() {
@@ -2245,6 +2561,7 @@ async function openSelectedMemoryInEditor() {
   state.activeEditorEntry = { kind: 'memory', stableId: state.selectedMemoryId }
   closeCreateMemoryDraft()
   closeDeleteMemoryConfirm()
+  closeMemoryContextMenu()
   closeCreateSkillDraft()
   closeCreatePathDraft()
   closeWarehouseContextMenu()
@@ -2361,6 +2678,14 @@ function bindEvents() {
     let shouldSync = false
 
     if (
+      state.memoryContextMenu.open &&
+      !event.target.closest('[data-role="memory-context-menu"]')
+    ) {
+      closeMemoryContextMenu()
+      shouldSync = true
+    }
+
+    if (
       state.skillContextMenu.open &&
       !event.target.closest('[data-role="skill-context-menu"]')
     ) {
@@ -2412,6 +2737,16 @@ function bindEvents() {
         field: 'id',
         value: event.target.value
       })
+      syncActionUi()
+      return
+    }
+
+    if (event.target.id === 'memoryRenameInput') {
+      state.memoryRename = {
+        ...state.memoryRename,
+        draftId: event.target.value,
+        error: ''
+      }
       syncActionUi()
       return
     }
@@ -2614,6 +2949,29 @@ function bindEvents() {
       return
     }
 
+    if (event.target.id === 'memoryRenameInput') {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        runAction('renameMemory', renameMemory, {
+          onError: error => {
+            state.memoryRename = {
+              ...state.memoryRename,
+              error: error.message || String(error)
+            }
+            syncAll()
+          }
+        })
+        return
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeMemoryRenameDialog()
+        syncAll()
+      }
+      return
+    }
+
     if (event.target.id === 'createPathValue') {
       if (event.key === 'Enter') {
         event.preventDefault()
@@ -2742,6 +3100,44 @@ function bindEvents() {
       }
     }
 
+    const memoryRenameAction = event.target.closest('[data-memory-rename-action]')
+    if (memoryRenameAction) {
+      switch (memoryRenameAction.dataset.memoryRenameAction) {
+        case 'confirm':
+          runAction('renameMemory', renameMemory, {
+            onError: error => {
+              state.memoryRename = {
+                ...state.memoryRename,
+                error: error.message || String(error)
+              }
+              syncAll()
+            }
+          })
+          return
+        case 'cancel':
+          closeMemoryRenameDialog()
+          syncAll()
+          return
+        default:
+          return
+      }
+    }
+
+    const droppedSkillConfirmAction = event.target.closest('[data-dropped-skill-confirm-action]')
+    if (droppedSkillConfirmAction) {
+      switch (droppedSkillConfirmAction.dataset.droppedSkillConfirmAction) {
+        case 'confirm':
+          runAction('importDroppedSkill', confirmDroppedSkillImport)
+          return
+        case 'cancel':
+          closeDroppedSkillImportConfirm()
+          syncAll()
+          return
+        default:
+          return
+      }
+    }
+
     const treeMenuAction = event.target.closest('[data-tree-menu-action]')
     if (treeMenuAction) {
       const targetPath = state.treeContextMenu.path || ''
@@ -2752,6 +3148,8 @@ function bindEvents() {
       const dirtyConfirmLabel = {
         'rename-skill': '重命名当前 skill',
         'delete-skill': '删除当前 skill',
+        'rename-memory': '重命名当前 memory',
+        'delete-memory': '删除当前 memory',
         'rename-path': '重命名当前路径',
         'delete-path': '删除当前路径'
       }
@@ -2780,6 +3178,18 @@ function bindEvents() {
           beginSkillDelete(state.selectedSkillId)
           syncAll()
           return
+        case 'rename-memory':
+          openMemoryRenameDialog()
+          syncAll()
+          return
+        case 'delete-memory':
+          if (!window.confirm(`删除整个 memory ${memoryLabel(selectedMemory())} ?`)) {
+            closeTreeContextMenu()
+            syncAll()
+            return
+          }
+          runAction('deleteMemory', deleteMemory)
+          return
         case 'rename-path':
           openRenamePathDraft(targetPath, state.treeContextMenu.pathKind || 'file')
           syncAll()
@@ -2806,6 +3216,22 @@ function bindEvents() {
             return
           }
           beginSkillDelete(targetSkillId)
+          syncAll()
+          return
+        default:
+          return
+      }
+    }
+
+    const memoryMenuAction = event.target.closest('[data-memory-menu-action]')
+    if (memoryMenuAction) {
+      switch (memoryMenuAction.dataset.memoryMenuAction) {
+        case 'rename':
+          openMemoryRenameDialog()
+          syncAll()
+          return
+        case 'delete':
+          openDeleteMemoryConfirm()
           syncAll()
           return
         default:
@@ -2871,6 +3297,7 @@ function bindEvents() {
         state.selectedMemoryId = nextMemoryId
         closeCreateMemoryDraft()
         closeDeleteMemoryConfirm()
+        closeMemoryContextMenu()
         closeCreatePathDraft()
         closeWarehouseContextMenu()
         closeSkillContextMenu()
@@ -2892,6 +3319,7 @@ function bindEvents() {
       state.selectedMemoryId = nextMemoryId
       closeCreateMemoryDraft()
       closeDeleteMemoryConfirm()
+      closeMemoryContextMenu()
       resetGeneratedMemoryCommand()
       syncAll()
       return
@@ -2967,6 +3395,14 @@ function bindEvents() {
           return
         case 'deleteMemory':
           openDeleteMemoryConfirm()
+          syncAll()
+          return
+        case 'openCreateSkill':
+          closeWarehouseContextMenu()
+          closeSkillContextMenu()
+          closeSkillInteraction()
+          closeTreeContextMenu()
+          openCreateSkillDraft()
           syncAll()
           return
         case 'deleteSkill':
@@ -3230,9 +3666,33 @@ function bindEvents() {
       return
     }
 
+    if (state.currentPage === 'memory') {
+      if (event.target.closest('[data-role="memory-context-menu"]')) {
+        return
+      }
+
+      const memoryButton = event.target.closest('[data-memory-id]')
+      if (!memoryButton) {
+        return
+      }
+
+      event.preventDefault()
+      openMemoryContextMenu(
+        Number(memoryButton.dataset.memoryId),
+        event.clientX,
+        event.clientY
+      )
+      syncAll()
+      return
+    }
+
     const inEditorWarehouse = state.currentPage === 'editor' && !showingEditorTree()
     const inSkillsPage = state.currentPage === 'skills'
+    const browsePane = event.target.closest('[data-pane-role="browse"]')
     if (!inEditorWarehouse && !inSkillsPage) {
+      return
+    }
+    if (inSkillsPage && !browsePane) {
       return
     }
 
@@ -3247,6 +3707,25 @@ function bindEvents() {
       event.preventDefault()
       openSkillContextMenu(
         Number(skillButton.dataset.skillId),
+        event.clientX,
+        event.clientY
+      )
+      syncAll()
+      return
+    }
+
+    if (inSkillsPage && !skillButton) {
+      const blockedControl = event.target.closest('input, textarea, select, option, button, label')
+      if (blockedControl) {
+        return
+      }
+
+      event.preventDefault()
+      openWarehouseContextMenu(
+        {
+          title: 'WAREHOUSE',
+          tagKey: ''
+        },
         event.clientX,
         event.clientY
       )

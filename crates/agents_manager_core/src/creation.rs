@@ -2,6 +2,8 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+use serde::Serialize;
+
 use crate::{
     load_skill_registry, save_skill_registry, scan_warehouse, AppConfig, CoreError, Result,
     SkillEntry,
@@ -11,6 +13,12 @@ pub struct CreateSkillRequest {
     pub id: String,
     pub name: Option<String>,
     pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct DroppedSkillPreview {
+    pub id: String,
+    pub name: Option<String>,
 }
 
 pub fn create_skill(cfg: &AppConfig, req: CreateSkillRequest) -> Result<SkillEntry> {
@@ -72,8 +80,33 @@ pub fn rename_skill(cfg: &AppConfig, stable_id: u64, next_id: &str) -> Result<Sk
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "renamed skill not found").into())
 }
 
-pub fn import_dropped_skill(cfg: &AppConfig, source: &Path) -> Result<SkillEntry> {
+pub fn preview_dropped_skill(source: &Path) -> Result<DroppedSkillPreview> {
     let import_source = resolve_dropped_skill_source(source)?;
+    let skill_id = import_source.skill_id()?;
+    let skill_id = sanitize_skill_id(&skill_id)?;
+    let name = import_source.skill_name().ok().and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+
+    Ok(DroppedSkillPreview { id: skill_id, name })
+}
+
+pub fn import_dropped_skill(
+    cfg: &AppConfig,
+    source: &Path,
+    overwrite_stable_id: Option<u64>,
+) -> Result<SkillEntry> {
+    let import_source = resolve_dropped_skill_source(source)?;
+
+    if let Some(stable_id) = overwrite_stable_id {
+        return overwrite_skill_from_drop(cfg, &import_source, stable_id);
+    }
+
     let skill_id = import_source.skill_id()?;
     let skill_id = sanitize_skill_id(&skill_id)?;
     let skill_dir = cfg.skill_warehouse.join(&skill_id);
@@ -86,6 +119,33 @@ pub fn import_dropped_skill(cfg: &AppConfig, source: &Path) -> Result<SkillEntry
         .into_iter()
         .find(|entry| entry.id == skill_id)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "imported skill not found").into())
+}
+
+fn overwrite_skill_from_drop(
+    cfg: &AppConfig,
+    import_source: &DroppedSkillSource<'_>,
+    stable_id: u64,
+) -> Result<SkillEntry> {
+    let target = scan_warehouse(cfg)?
+        .into_iter()
+        .find(|entry| entry.stable_id == stable_id)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "skill not found"))?;
+
+    match import_source {
+        DroppedSkillSource::Directory(source_dir) => {
+            overwrite_skill_directory(&target.path, source_dir)?;
+        }
+        DroppedSkillSource::SkillFile(skill_md) => {
+            overwrite_skill_file(&target.path.join("SKILL.md"), skill_md)?;
+        }
+    }
+
+    scan_warehouse(cfg)?
+        .into_iter()
+        .find(|entry| entry.stable_id == stable_id)
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "overwritten skill not found").into()
+        })
 }
 
 pub fn copy_paths_into_entry(
@@ -159,6 +219,13 @@ impl DroppedSkillSource<'_> {
                         .into()
                     })
             }),
+        }
+    }
+
+    fn skill_name(&self) -> Result<String> {
+        match self {
+            Self::Directory(skill_dir) => read_skill_name(&skill_dir.join("SKILL.md")),
+            Self::SkillFile(skill_md) => read_skill_name(skill_md),
         }
     }
 
@@ -252,6 +319,85 @@ fn copy_dir_contents(from: &Path, to: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn overwrite_skill_directory(target_dir: &Path, source_dir: &Path) -> Result<()> {
+    if paths_share_location(target_dir, source_dir) {
+        return Ok(());
+    }
+
+    let backup_dir = next_backup_path(target_dir);
+    fs::rename(target_dir, &backup_dir)?;
+    fs::create_dir(target_dir)?;
+
+    if let Err(error) = copy_dir_contents(source_dir, target_dir) {
+        let _ = fs::remove_dir_all(target_dir);
+        let _ = fs::rename(&backup_dir, target_dir);
+        return Err(error);
+    }
+
+    let _ = fs::remove_dir_all(&backup_dir);
+    Ok(())
+}
+
+fn overwrite_skill_file(target_skill_md: &Path, source_skill_md: &Path) -> Result<()> {
+    if paths_share_location(target_skill_md, source_skill_md) {
+        return Ok(());
+    }
+
+    let backup_path = if target_skill_md.symlink_metadata().is_ok() {
+        let backup_path = next_backup_path(target_skill_md);
+        fs::rename(target_skill_md, &backup_path)?;
+        Some(backup_path)
+    } else {
+        None
+    };
+
+    if let Some(parent) = target_skill_md.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    if let Err(error) = fs::copy(source_skill_md, target_skill_md) {
+        let _ = fs::remove_file(target_skill_md);
+        if let Some(backup_path) = &backup_path {
+            let _ = fs::rename(backup_path, target_skill_md);
+        }
+        return Err(error.into());
+    }
+
+    if let Some(backup_path) = backup_path {
+        let _ = fs::remove_file(backup_path);
+    }
+    Ok(())
+}
+
+fn next_backup_path(target: &Path) -> PathBuf {
+    let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = target
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "entry".to_string());
+
+    for index in 0.. {
+        let suffix = if index == 0 {
+            ".agents-manager-backup".to_string()
+        } else {
+            format!(".agents-manager-backup-{index}")
+        };
+        let candidate = parent.join(format!(".{file_name}{suffix}"));
+        if candidate.symlink_metadata().is_err() {
+            return candidate;
+        }
+    }
+
+    unreachable!()
+}
+
+fn paths_share_location(left: &Path, right: &Path) -> bool {
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
 }
 
 fn sanitize_entry_relative_path(relative_path: &str) -> Result<PathBuf> {

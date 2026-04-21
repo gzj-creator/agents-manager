@@ -7,8 +7,8 @@ use agents_manager_core::{
     bootstrap_legacy_migration, copy_paths_into_entry, create_memory, create_skill, delete_memory,
     delete_skill, generate_init_memory_command, generate_init_project_command,
     import_dropped_memory, import_dropped_skill, import_git_skills, load_app_config,
-    load_mcp_config, migrate_legacy_skills, rename_memory, rename_skill, save_app_config,
-    save_mcp_config, scan_memory_warehouse, scan_warehouse, sync_global_skills,
+    load_mcp_config, migrate_legacy_skills, preview_dropped_skill, rename_memory, rename_skill,
+    save_app_config, save_mcp_config, scan_memory_warehouse, scan_warehouse, sync_global_skills,
     update_editable_settings, update_skill_metadata, ClientKind, ClientRoots, CreateMemoryRequest,
     CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest, InstallMode, McpServerConfig,
     McpTarget,
@@ -118,10 +118,16 @@ struct GitImportReq {
 #[derive(Debug, Deserialize)]
 struct ImportDroppedSkillReq {
     path: String,
+    overwrite_stable_id: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ImportDroppedMemoryReq {
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PreviewDroppedSkillReq {
     path: String,
 }
 
@@ -428,8 +434,15 @@ fn generate_init_memory_command_cmd(req: InitMemoryCommandReq) -> Result<String,
 #[tauri::command]
 fn import_dropped_skill_cmd(req: ImportDroppedSkillReq) -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
-    let imported = import_dropped_skill(&cfg, Path::new(&req.path)).map_err(|e| e.to_string())?;
+    let imported = import_dropped_skill(&cfg, Path::new(&req.path), req.overwrite_stable_id)
+        .map_err(|e| e.to_string())?;
     serde_json::to_value(imported).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn preview_dropped_skill_cmd(req: PreviewDroppedSkillReq) -> Result<serde_json::Value, String> {
+    let preview = preview_dropped_skill(Path::new(&req.path)).map_err(|e| e.to_string())?;
+    serde_json::to_value(preview).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -752,6 +765,7 @@ fn main() {
             delete_skill_path_cmd,
             delete_memory_path_cmd,
             migrate_legacy_skills_cmd,
+            preview_dropped_skill_cmd,
             import_dropped_skill_cmd,
             import_dropped_memory_cmd,
             copy_paths_into_skill_cmd,

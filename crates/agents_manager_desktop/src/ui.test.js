@@ -16,14 +16,20 @@ import {
   formatOutputPayload,
   groupSkillsByType,
   groupSkillsByTag,
+  isDroppedSkillAlreadyExistsError,
   normalizePageId,
   nextActionState,
   nextEditorState,
   nextPathDraftState,
   nextSkillDraftState,
+  prioritizeDroppedSkillImportPaths,
+  renderDroppedSkillImportConfirmHtml,
+  renderMemoryRenameModalHtml,
+  resolveDroppedSkillImportCollision,
   resolveEditorGroupKey,
   renderExplorerGroupListHtml,
   renderExplorerSkillListHtml,
+  renderMemoryContextMenuHtml,
   renderSkillGroupsHtml,
   renderSkillContextMenuHtml,
   renderTreeHtml,
@@ -49,6 +55,7 @@ test('createAppShellHtml includes desktop navigation and page shell', () => {
   assert.match(html, /data-page-link="settings"/)
   assert.match(html, /data-role="page-header"/)
   assert.match(html, /data-role="page-body"/)
+  assert.match(html, /data-role="app-modal-root"/)
   assert.doesNotMatch(html, /class="brand-mark"/)
   assert.doesNotMatch(html, /id="selectedSkillSummary"/)
   assert.doesNotMatch(html, /id="pageEyebrow"/)
@@ -190,6 +197,22 @@ test('createMemoryPageHtml renders inline memory create and delete controls', ()
   assert.match(html, /data-role="memory-delete-confirm"/)
 })
 
+test('createMemoryPageHtml keeps the memory context menu out of the sidebar layout', () => {
+  const html = createMemoryPageHtml({
+    memories: [{ stable_id: 7, id: 'team-default' }],
+    selectedMemoryId: 7,
+    selectedMemory: { stable_id: 7, id: 'team-default' },
+    memoryContextMenu: {
+      open: true,
+      x: 120,
+      y: 80,
+      memory: { stable_id: 7, id: 'team-default' }
+    }
+  })
+
+  assert.doesNotMatch(html, /data-role="memory-context-menu"/)
+})
+
 test('main.js wires memory command generation through the Tauri bridge', () => {
   const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
 
@@ -250,7 +273,73 @@ test('main.js wires memory create and delete through the Tauri bridge', () => {
   assert.match(source, /delete_memory_cmd/)
 })
 
-test('main.js uses inline memory creation instead of window prompt', () => {
+test('main.js wires memory rename through an in-app modal and memory context menus', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /rename_memory_cmd/)
+  assert.match(source, /renderMemoryContextMenuHtml\(\{\s*\.\.\.state\.memoryContextMenu,\s*memory:\s*memoryContextMenuMemory\(\)\s*\}\)/)
+  assert.match(source, /function openMemoryRenameDialog\(/)
+  assert.match(source, /data-memory-menu-action/)
+  assert.match(source, /renderMemoryRenameModalHtml\(state\.memoryRename\)/)
+  assert.match(source, /event\.target\.id === 'memoryRenameInput'/)
+  assert.match(source, /const memoryRenameAction = event\.target\.closest\('\[data-memory-rename-action\]'\)/)
+  assert.match(source, /case 'rename-memory':[\s\S]*openMemoryRenameDialog\(/)
+  assert.match(source, /case 'rename':[\s\S]*openMemoryRenameDialog\(/)
+  assert.match(source, /case 'delete-memory':[\s\S]*runAction\('deleteMemory', deleteMemory\)/)
+  assert.match(source, /case 'delete':[\s\S]*openDeleteMemoryConfirm\(\)/)
+  assert.doesNotMatch(source, /window\.prompt\('输入新的 Memory ID'/)
+})
+
+test('main.js renders skill creation state and warehouse menu on the skills page', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /createOpen:\s*state\.createSkill\.open/)
+  assert.match(source, /createId:\s*state\.createSkill\.id/)
+  assert.match(source, /createError:\s*state\.createSkill\.error/)
+  assert.match(source, /createTargetLabel:\s*state\.createSkillTargetLabel/)
+  assert.match(source, /warehouseContextMenu:\s*state\.warehouseContextMenu/)
+})
+
+test('main.js opens inline skill creation from the skills page button', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /case 'openCreateSkill':[\s\S]*openCreateSkillDraft\(\)/)
+})
+
+test('main.js opens the warehouse context menu from blank space on the skills page', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /const browsePane = event\.target\.closest\('\[data-pane-role="browse"\]'\)/)
+  assert.match(source, /if \(inSkillsPage && !browsePane\) \{\s*return\s*\}/)
+  assert.match(source, /if \(inSkillsPage && !skillButton\) \{[\s\S]*openWarehouseContextMenu\(/)
+})
+
+test('main.js previews dropped skills and confirms overwrite for a single same-name match', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /invoke\('preview_dropped_skill_cmd'/)
+  assert.match(source, /for \(const path of prioritizeDroppedSkillImportPaths\(paths\)\)/)
+  assert.match(source, /resolveDroppedSkillImportCollision\(state\.skills,\s*droppedSkill\)/)
+  assert.match(source, /case 'confirm-overwrite':[\s\S]*openDroppedSkillImportConfirm\(conflict,\s*candidate\)/)
+  assert.match(source, /overwrite_stable_id:\s*conflict\.targetSkillId/)
+})
+
+test('main.js rejects dropped skills when the same name matches multiple warehouse skills', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /case 'ambiguous-name':[\s\S]*throw new Error\(/)
+})
+
+test('main.js retries dropped skill import as overwrite after reloading skills when the backend reports an existing directory', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /catch \(error\) \{[\s\S]*isDroppedSkillAlreadyExistsError\(error\)/)
+  assert.match(source, /catch \(error\) \{[\s\S]*await loadSkills\(\)/)
+  assert.match(source, /catch \(error\) \{[\s\S]*resolveDroppedSkillImportCollision\(state\.skills,\s*droppedSkill\)/)
+  assert.match(source, /catch \(error\) \{[\s\S]*openDroppedSkillImportConfirm\(conflict,\s*candidate\)/)
+})
+
+test('main.js uses inline memory creation for create flow', () => {
   const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
 
   assert.match(source, /memoryDraft:/)
@@ -261,10 +350,9 @@ test('main.js uses inline memory creation instead of window prompt', () => {
   assert.match(source, /event\.target\.id === 'createMemoryId'/)
   assert.match(source, /data-create-memory-action/)
   assert.match(source, /case 'createMemory':[\s\S]*openCreateMemoryDraft\(\)/)
-  assert.doesNotMatch(source, /window\.prompt\('输入新的 Memory ID'/)
 })
 
-test('main.js uses inline memory deletion confirmation instead of window confirm', () => {
+test('main.js uses inline memory deletion confirmation on the memory page', () => {
   const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
 
   assert.match(source, /memoryDeleteConfirmOpen:/)
@@ -272,7 +360,36 @@ test('main.js uses inline memory deletion confirmation instead of window confirm
   assert.match(source, /function openDeleteMemoryConfirm\(/)
   assert.match(source, /data-delete-memory-action/)
   assert.match(source, /case 'deleteMemory':[\s\S]*openDeleteMemoryConfirm\(\)/)
-  assert.doesNotMatch(source, /window\.confirm\(`删除整个 memory/)
+})
+
+test('main.js keeps command copy feedback local instead of re-rendering the whole page', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(
+    source,
+    /function syncCommandCopyUi\(\) \{[\s\S]*?copyCommandButton\.dataset\.copyState = state\.copyFeedback[\s\S]*?copyMemoryCommandButton\.dataset\.copyState = state\.memoryCopyFeedback[\s\S]*?\n\}/
+  )
+  assert.match(
+    source,
+    /function markCommandCopied\(\) \{[\s\S]*?state\.copyFeedback = 'copied'[\s\S]*?syncCommandCopyUi\(\)[\s\S]*?state\.copyFeedback = 'idle'[\s\S]*?syncCommandCopyUi\(\)[\s\S]*?\n\}/
+  )
+  assert.match(
+    source,
+    /function markMemoryCommandCopied\(\) \{[\s\S]*?state\.memoryCopyFeedback = 'copied'[\s\S]*?syncCommandCopyUi\(\)[\s\S]*?state\.memoryCopyFeedback = 'idle'[\s\S]*?syncCommandCopyUi\(\)[\s\S]*?\n\}/
+  )
+})
+
+test('main.js command copy handlers do not call syncAll after copying', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(
+    source,
+    /async function copyGeneratedCommand\(\) \{[\s\S]*?await copyTextToClipboard\(state\.generatedCommand\)[\s\S]*?markCommandCopied\(\)[\s\S]*?return[\s\S]*?\n\}/
+  )
+  assert.match(
+    source,
+    /async function copyGeneratedMemoryCommand\(\) \{[\s\S]*?await copyTextToClipboard\(state\.generatedMemoryCommand\)[\s\S]*?markMemoryCommandCopied\(\)[\s\S]*?\n\}/
+  )
 })
 
 test('nextActionState marks an action as loading with matching status copy', () => {
@@ -332,9 +449,132 @@ test('groupSkillsByType groups entries under their registry type', () => {
   ])
 
   assert.equal(groups.length, 2)
-  assert.equal(groups[0].label, 'tooling')
-  assert.equal(groups[1].label, 'workflow')
+  assert.equal(groups[0].label, 'TOOLING')
+  assert.equal(groups[1].label, 'WORKFLOW')
   assert.equal(groups[1].items.length, 2)
+})
+
+test('groupSkillsByType merges mixed-case type values into one stable group', () => {
+  const groups = groupSkillsByType([
+    { stable_id: 1, id: 'a', name: 'Alpha', skill_type: 'WORK', tags: [] },
+    { stable_id: 2, id: 'b', name: 'Beta', skill_type: ' work ', tags: [] },
+    { stable_id: 3, id: 'c', name: 'Gamma', skill_type: 'Work', tags: [] },
+    { stable_id: 4, id: 'd', name: 'Delta', skill_type: '', tags: [] }
+  ])
+
+  assert.equal(groups.length, 2)
+  assert.equal(groups[0].label, 'UNCATEGORIZED')
+  assert.equal(groups[0].items.length, 1)
+  assert.equal(groups[1].label, 'WORK')
+  assert.equal(groups[1].items.length, 3)
+  assert.deepEqual(
+    groups[1].items.map(skill => skill.name),
+    ['Alpha', 'Beta', 'Gamma']
+  )
+})
+
+test('resolveDroppedSkillImportCollision skips overwrite handling when the dropped skill has no matching name or id', () => {
+  const resolution = resolveDroppedSkillImportCollision(
+    [{ stable_id: 1, id: 'alpha', name: 'Shared Name' }],
+    { id: 'incoming', name: '' }
+  )
+
+  assert.deepEqual(resolution, { mode: 'import' })
+})
+
+test('resolveDroppedSkillImportCollision requests overwrite when exactly one skill has the same name ignoring case', () => {
+  const resolution = resolveDroppedSkillImportCollision(
+    [
+      { stable_id: 1, id: 'alpha', name: 'Shared Name' },
+      { stable_id: 2, id: 'beta', name: 'Other Name' }
+    ],
+    { id: 'incoming', name: ' shared name ' }
+  )
+
+  assert.deepEqual(resolution, {
+    mode: 'confirm-overwrite',
+    targetSkillId: 1,
+    name: 'Shared Name'
+  })
+})
+
+test('resolveDroppedSkillImportCollision requests overwrite when the dropped skill id matches ignoring case and names are missing', () => {
+  const resolution = resolveDroppedSkillImportCollision(
+    [
+      { stable_id: 1, id: 'mock-common-usage', name: '' },
+      { stable_id: 2, id: 'beta', name: 'Other Name' }
+    ],
+    { id: ' MOCK-COMMON-USAGE ', name: '' }
+  )
+
+  assert.deepEqual(resolution, {
+    mode: 'confirm-overwrite',
+    targetSkillId: 1,
+    name: 'mock-common-usage'
+  })
+})
+
+test('resolveDroppedSkillImportCollision rejects ambiguous same-name matches ignoring case', () => {
+  const resolution = resolveDroppedSkillImportCollision(
+    [
+      { stable_id: 1, id: 'alpha', name: 'Shared Name' },
+      { stable_id: 2, id: 'beta', name: 'shared name' }
+    ],
+    { id: 'incoming', name: 'SHARED NAME' }
+  )
+
+  assert.deepEqual(resolution, {
+    mode: 'ambiguous-name',
+    name: 'Shared Name',
+    targetSkillIds: [1, 2]
+  })
+})
+
+test('isDroppedSkillAlreadyExistsError recognizes common duplicate-directory errors from import', () => {
+  assert.equal(isDroppedSkillAlreadyExistsError(new Error('File exists (os error 17)')), true)
+  assert.equal(isDroppedSkillAlreadyExistsError('skill already exists'), true)
+  assert.equal(isDroppedSkillAlreadyExistsError(new Error('permission denied')), false)
+})
+
+test('prioritizeDroppedSkillImportPaths prefers the dropped skill root before nested files', () => {
+  const ordered = prioritizeDroppedSkillImportPaths([
+    '/tmp/mock-common-usage/references',
+    '/tmp/mock-common-usage/SKILL.md',
+    '/tmp/mock-common-usage'
+  ])
+
+  assert.deepEqual(ordered, [
+    '/tmp/mock-common-usage',
+    '/tmp/mock-common-usage/SKILL.md',
+    '/tmp/mock-common-usage/references'
+  ])
+})
+
+test('renderDroppedSkillImportConfirmHtml renders an in-app overwrite confirmation modal', () => {
+  const html = renderDroppedSkillImportConfirmHtml({
+    open: true,
+    name: 'mock-common-usage'
+  })
+
+  assert.match(html, /data-role="dropped-skill-import-confirm"/)
+  assert.match(html, /mock-common-usage/)
+  assert.match(html, /data-dropped-skill-confirm-action="confirm"/)
+  assert.match(html, /data-dropped-skill-confirm-action="cancel"/)
+})
+
+test('renderMemoryRenameModalHtml renders an in-app rename modal for memory ids', () => {
+  const html = renderMemoryRenameModalHtml({
+    open: true,
+    draftId: 'itp_api_wrapper',
+    error: 'duplicate memory id'
+  })
+
+  assert.match(html, /data-role="memory-rename-modal"/)
+  assert.match(html, /id="memoryRenameInput"/)
+  assert.match(html, /value="itp_api_wrapper"/)
+  assert.match(html, /duplicate memory id/)
+  assert.match(html, /data-memory-rename-action="confirm"/)
+  assert.match(html, /data-memory-rename-action="cancel"/)
 })
 
 test('createSkillsPageHtml includes search, tag filter, and grouped result list', () => {
@@ -382,6 +622,9 @@ test('createSkillsPageHtml uses a compact warehouse heading in the browse pane',
   const html = createSkillsPageHtml()
 
   assert.match(html, /<h2>Warehouse<\/h2>/)
+  assert.match(html, /id="openCreateSkill"/)
+  assert.match(html, /data-role="open-create-skill"/)
+  assert.match(html, />新建 Skill</)
   assert.doesNotMatch(html, /<h2>Warehouse Skills<\/h2>/)
 })
 
@@ -397,6 +640,26 @@ test('createSkillsPageHtml renders compact import actions for warehouse manageme
   assert.match(html, /导入旧 Skills/)
   assert.match(html, /导入仓库中的 Skills/)
   assert.match(html, /id="gitRepoUrl"/)
+})
+
+test('createSkillsPageHtml can render inline skill creation and warehouse context menu', () => {
+  const html = createSkillsPageHtml({
+    skills: [],
+    createOpen: true,
+    createId: 'alpha',
+    createError: 'duplicate',
+    createTargetLabel: 'WAREHOUSE',
+    warehouseContextMenu: {
+      open: true,
+      title: 'WAREHOUSE'
+    }
+  })
+
+  assert.match(html, /data-role="create-skill-form"/)
+  assert.match(html, /id="createSkillId"/)
+  assert.match(html, /alpha/)
+  assert.match(html, /duplicate/)
+  assert.match(html, /data-role="warehouse-context-menu"/)
 })
 
 test('resolveDistributionSkillIds prefers checked skills and falls back to current selection', () => {
@@ -593,6 +856,21 @@ test('styles render the skills page as a continuous split workspace', () => {
   assert.match(css, /\.page-grid--skills > \[data-pane-role="details"\]\s*\{[\s\S]*border-left:\s*1px solid rgba\(74, 57, 36, 0\.12\);/)
 })
 
+test('styles keep memory panels from capturing fixed-position context menus', () => {
+  const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.match(css, /\.page-grid--memory > \[data-role="memory-sidebar"\]\s*\{[\s\S]*backdrop-filter:\s*none;/)
+  assert.match(css, /\.page-grid--memory > \[data-role="memory-metadata-panel"\]\s*\{[\s\S]*backdrop-filter:\s*none;/)
+})
+
+test('styles keep the memory sidebar stacked without stretching delete confirmation cards', () => {
+  const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.match(css, /\.memory-sidebar\s*\{[\s\S]*display:\s*flex;/)
+  assert.match(css, /\.memory-sidebar\s*\{[\s\S]*flex-direction:\s*column;/)
+  assert.match(css, /\.memory-list\s*\{[\s\S]*flex:\s*1;/)
+})
+
 test('groupSkillsByTag creates warehouse folders from tags and uncategorized skills', () => {
   const groups = groupSkillsByTag([
     {
@@ -752,6 +1030,21 @@ test('renderSkillContextMenuHtml includes rename and delete actions for a skill'
   assert.match(html, /Alpha/)
 })
 
+test('renderMemoryContextMenuHtml includes rename and delete actions for a memory', () => {
+  const html = renderMemoryContextMenuHtml({
+    open: true,
+    memory: {
+      stable_id: 7,
+      id: 'team-default'
+    }
+  })
+
+  assert.match(html, /data-role="memory-context-menu"/)
+  assert.match(html, /data-memory-menu-action="rename"/)
+  assert.match(html, /data-memory-menu-action="delete"/)
+  assert.match(html, /team-default/)
+})
+
 test('renderWarehouseContextMenuHtml includes create action for warehouse browser', () => {
   const html = renderWarehouseContextMenuHtml({
     open: true,
@@ -767,7 +1060,8 @@ test('renderTreeContextMenuHtml renders root-level explorer actions', () => {
   const html = renderTreeContextMenuHtml({
     open: true,
     title: 'alpha',
-    target: 'root'
+    target: 'root',
+    entryKind: 'skill'
   })
 
   assert.match(html, /data-role="tree-context-menu"/)
@@ -775,6 +1069,23 @@ test('renderTreeContextMenuHtml renders root-level explorer actions', () => {
   assert.match(html, /data-tree-menu-action="create-folder"/)
   assert.match(html, /data-tree-menu-action="rename-skill"/)
   assert.match(html, /data-tree-menu-action="delete-skill"/)
+})
+
+test('renderTreeContextMenuHtml renders root-level memory actions', () => {
+  const html = renderTreeContextMenuHtml({
+    open: true,
+    title: 'team-default',
+    target: 'root',
+    entryKind: 'memory'
+  })
+
+  assert.match(html, /data-role="tree-context-menu"/)
+  assert.match(html, /data-tree-menu-action="create-file"/)
+  assert.match(html, /data-tree-menu-action="create-folder"/)
+  assert.match(html, /data-tree-menu-action="rename-memory"/)
+  assert.match(html, /data-tree-menu-action="delete-memory"/)
+  assert.doesNotMatch(html, /data-tree-menu-action="rename-skill"/)
+  assert.doesNotMatch(html, /data-tree-menu-action="delete-skill"/)
 })
 
 test('renderTreeContextMenuHtml renders file actions without create entries', () => {

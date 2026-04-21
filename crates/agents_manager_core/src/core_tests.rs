@@ -14,9 +14,9 @@ mod tests {
         import_dropped_memory, import_dropped_skill, import_git_skills, init_memory, init_project,
         load_mcp_config, load_skill_registry, rename_memory, rename_skill, save_mcp_config,
         save_skill_registry, scan_memory_warehouse, scan_warehouse, update_editable_settings,
-        AppConfig, ApplySelections, ClientKind, ClientRoots, CoreError, CreateMemoryRequest,
-        CreateSkillRequest, EditableSettingsUpdate, InitMode, InstallMode, McpServerConfig,
-        McpTarget, Profile, RegistrySkill, SkillEntry, SkillRegistry,
+        update_skill_metadata, AppConfig, ApplySelections, ClientKind, ClientRoots, CoreError,
+        CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate, InitMode, InstallMode,
+        McpServerConfig, McpTarget, Profile, RegistrySkill, SkillEntry, SkillRegistry,
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -859,7 +859,8 @@ mod tests {
         fs::write(dropped_root.join("notes.txt"), "hello").unwrap();
         fs::write(dropped_root.join("nested").join("extra.md"), "more").unwrap();
 
-        let imported = import_dropped_skill(&ctx.cfg, &dropped_root.join("SKILL.md")).unwrap();
+        let imported =
+            import_dropped_skill(&ctx.cfg, &dropped_root.join("SKILL.md"), None).unwrap();
 
         assert_eq!(imported.id, "dragged-skill");
         assert!(ctx
@@ -896,7 +897,7 @@ mod tests {
         fs::write(dropped_root.join("notes.txt"), "hello").unwrap();
         fs::write(dropped_root.join("nested").join("extra.md"), "more").unwrap();
 
-        let imported = import_dropped_skill(&ctx.cfg, &dropped_root).unwrap();
+        let imported = import_dropped_skill(&ctx.cfg, &dropped_root, None).unwrap();
 
         assert_eq!(imported.id, "dragged-skill");
         assert_eq!(
@@ -919,6 +920,105 @@ mod tests {
             )
             .unwrap(),
             "more"
+        );
+    }
+
+    #[test]
+    fn import_dropped_skill_can_overwrite_an_existing_skill_directory_in_place() {
+        let ctx = TestCtx::new();
+        let created = create_skill(
+            &ctx.cfg,
+            CreateSkillRequest {
+                id: "existing-id".into(),
+                name: None,
+                description: None,
+            },
+        )
+        .unwrap();
+        update_skill_metadata(
+            &ctx.cfg,
+            created.stable_id,
+            Some("workflow".into()),
+            vec!["shared".into()],
+        )
+        .unwrap();
+        fs::write(
+            created.path.join("SKILL.md"),
+            "---\nname: Shared Name\ndescription: old\n---\nold body",
+        )
+        .unwrap();
+        fs::write(created.path.join("stale.txt"), "remove me").unwrap();
+
+        let dropped_root = ctx.tmp.path().join("dropped").join("incoming-skill");
+        fs::create_dir_all(dropped_root.join("nested")).unwrap();
+        fs::write(
+            dropped_root.join("SKILL.md"),
+            "---\nname: Shared Name\ndescription: new\n---\nnew body",
+        )
+        .unwrap();
+        fs::write(dropped_root.join("notes.txt"), "fresh").unwrap();
+        fs::write(dropped_root.join("nested").join("extra.md"), "nested").unwrap();
+
+        let imported =
+            import_dropped_skill(&ctx.cfg, &dropped_root, Some(created.stable_id)).unwrap();
+
+        assert_eq!(imported.stable_id, created.stable_id);
+        assert_eq!(imported.id, "existing-id");
+        assert_eq!(imported.skill_type.as_deref(), Some("workflow"));
+        assert_eq!(imported.tags, vec!["shared"]);
+        assert_eq!(imported.name.as_deref(), Some("Shared Name"));
+        assert_eq!(imported.description.as_deref(), Some("new"));
+        assert!(!created.path.join("stale.txt").exists());
+        assert_eq!(
+            fs::read_to_string(created.path.join("notes.txt")).unwrap(),
+            "fresh"
+        );
+        assert_eq!(
+            fs::read_to_string(created.path.join("nested").join("extra.md")).unwrap(),
+            "nested"
+        );
+    }
+
+    #[test]
+    fn import_dropped_skill_can_overwrite_only_skill_md_when_dropping_a_single_file() {
+        let ctx = TestCtx::new();
+        let created = create_skill(
+            &ctx.cfg,
+            CreateSkillRequest {
+                id: "existing-id".into(),
+                name: None,
+                description: None,
+            },
+        )
+        .unwrap();
+        fs::write(
+            created.path.join("SKILL.md"),
+            "---\nname: Shared Name\ndescription: old\n---\nold body",
+        )
+        .unwrap();
+        fs::write(created.path.join("notes.txt"), "keep me").unwrap();
+
+        let dropped_root = ctx.tmp.path().join("dropped").join("downloads");
+        fs::create_dir_all(&dropped_root).unwrap();
+        let dropped_skill_md = dropped_root.join("SKILL.md");
+        fs::write(
+            &dropped_skill_md,
+            "---\nname: Shared Name\ndescription: new\n---\nnew body",
+        )
+        .unwrap();
+
+        let imported =
+            import_dropped_skill(&ctx.cfg, &dropped_skill_md, Some(created.stable_id)).unwrap();
+
+        assert_eq!(imported.stable_id, created.stable_id);
+        assert_eq!(imported.description.as_deref(), Some("new"));
+        assert_eq!(
+            fs::read_to_string(created.path.join("notes.txt")).unwrap(),
+            "keep me"
+        );
+        assert_eq!(
+            fs::read_to_string(created.path.join("SKILL.md")).unwrap(),
+            "---\nname: Shared Name\ndescription: new\n---\nnew body"
         );
     }
 

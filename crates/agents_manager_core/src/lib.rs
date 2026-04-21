@@ -25,8 +25,8 @@ pub use config::{
     AppConfig,
 };
 pub use creation::{
-    copy_paths_into_entry, create_skill, delete_skill, import_dropped_skill, rename_skill,
-    CreateSkillRequest,
+    copy_paths_into_entry, create_skill, delete_skill, import_dropped_skill, preview_dropped_skill,
+    rename_skill, CreateSkillRequest, DroppedSkillPreview,
 };
 pub use doctor::{doctor, DoctorReport, PolicyWarning};
 pub use error::{CoreError, Result};

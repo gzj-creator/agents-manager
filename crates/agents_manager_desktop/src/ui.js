@@ -49,6 +49,11 @@ const ACTION_COPY = {
     success: 'Skill 已重命名',
     error: 'Skill 重命名失败'
   },
+  renameMemory: {
+    start: '正在重命名 Memory',
+    success: 'Memory 已重命名',
+    error: 'Memory 重命名失败'
+  },
   createPath: {
     start: '正在创建路径',
     success: '路径已创建',
@@ -367,22 +372,41 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;')
 }
 
+function normalizeSkillType(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) {
+    return {
+      key: 'uncategorized',
+      label: 'UNCATEGORIZED'
+    }
+  }
+
+  const key = raw.toLowerCase()
+  return {
+    key,
+    label: key.toUpperCase()
+  }
+}
+
 export function groupSkillsByType(skills) {
   const groups = new Map()
 
   skills.forEach(skill => {
-    const label = skill.skill_type || 'uncategorized'
-    if (!groups.has(label)) {
-      groups.set(label, [])
+    const type = normalizeSkillType(skill.skill_type)
+    if (!groups.has(type.key)) {
+      groups.set(type.key, {
+        label: type.label,
+        items: []
+      })
     }
-    groups.get(label).push(skill)
+    groups.get(type.key).items.push(skill)
   })
 
   return [...groups.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([label, items]) => ({
-      label,
-      items: items.sort((left, right) => {
+    .map(([, group]) => ({
+      label: group.label,
+      items: group.items.sort((left, right) => {
         const leftName = left.name || left.id
         const rightName = right.name || right.id
         return leftName.localeCompare(rightName)
@@ -437,8 +461,104 @@ export function resolveEditorGroupKey(skill, preferredGroupKey = '') {
   return tags[0]
 }
 
+function normalizeComparableSkillName(value) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function displayComparableSkillName(value) {
+  return String(value ?? '').trim()
+}
+
+function comparableSkillKeys(skill = null) {
+  return [...new Set(
+    [skill?.name, skill?.id]
+      .map(normalizeComparableSkillName)
+      .filter(Boolean)
+  )]
+}
+
+function displayComparableSkillLabel(skill = null) {
+  return displayComparableSkillName(skill?.name) || displayComparableSkillName(skill?.id)
+}
+
+function droppedPathDepth(path = '') {
+  return String(path ?? '')
+    .trim()
+    .replace(/[\\/]+$/, '')
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .length
+}
+
+export function prioritizeDroppedSkillImportPaths(paths = []) {
+  return [...new Set(
+    paths
+      .map(path => String(path ?? '').trim())
+      .filter(Boolean)
+  )].sort((left, right) => {
+    const depthDiff = droppedPathDepth(left) - droppedPathDepth(right)
+    if (depthDiff) {
+      return depthDiff
+    }
+
+    const leftIsSkillMd = /(?:^|[\\/])SKILL\.md$/i.test(left)
+    const rightIsSkillMd = /(?:^|[\\/])SKILL\.md$/i.test(right)
+    if (leftIsSkillMd !== rightIsSkillMd) {
+      return leftIsSkillMd ? -1 : 1
+    }
+
+    return left.localeCompare(right)
+  })
+}
+
+export function isDroppedSkillAlreadyExistsError(error) {
+  const message = String(error?.message ?? error ?? '').toLowerCase()
+  return (
+    message.includes('already exists') ||
+    message.includes('file exists') ||
+    message.includes('os error 17')
+  )
+}
+
+export function resolveDroppedSkillImportCollision(skills = [], droppedSkill = null) {
+  const droppedKeys = comparableSkillKeys(droppedSkill)
+  if (!droppedKeys.length) {
+    return { mode: 'import' }
+  }
+
+  const matches = skills.filter(skill =>
+    comparableSkillKeys(skill).some(key => droppedKeys.includes(key))
+  )
+  if (!matches.length) {
+    return { mode: 'import' }
+  }
+
+  const displayName = displayComparableSkillLabel(matches[0]) || displayComparableSkillLabel(droppedSkill)
+
+  if (matches.length === 1) {
+    return {
+      mode: 'confirm-overwrite',
+      targetSkillId: matches[0].stable_id,
+      name: displayName
+    }
+  }
+
+  return {
+    mode: 'ambiguous-name',
+    name: displayName,
+    targetSkillIds: matches.map(skill => skill.stable_id)
+  }
+}
+
 export function treeMenuActionNeedsDirtyConfirm(action) {
-  return ['rename-skill', 'delete-skill', 'rename-path', 'delete-path'].includes(action)
+  return [
+    'rename-skill',
+    'delete-skill',
+    'rename-memory',
+    'delete-memory',
+    'rename-path',
+    'delete-path'
+  ].includes(action)
 }
 
 export function filterSkills(skills, filters = {}) {
@@ -621,7 +741,7 @@ export function renderSkillGroupsHtml(
           const selected = skill.stable_id === selectedSkillId ? ' is-selected' : ''
           const checked = checkedSet.has(skill.stable_id) ? ' checked' : ''
           const title = escapeHtml(skill.name || skill.id)
-          const type = escapeHtml(skill.skill_type || 'uncategorized')
+          const type = escapeHtml(normalizeSkillType(skill.skill_type).label)
           const tags = (skill.tags || [])
             .map(tag => `<span class="tag-chip">${escapeHtml(tag)}</span>`)
             .join('')
@@ -771,6 +891,28 @@ export function renderSkillContextMenuHtml(contextMenu = {}) {
   `
 }
 
+export function renderMemoryContextMenuHtml(contextMenu = {}) {
+  const { open = false, memory = null, x = 0, y = 0 } = contextMenu || {}
+
+  if (!open || !memory) {
+    return ''
+  }
+
+  const label = escapeHtml(memory.id || `Memory ${memory.stable_id || ''}`.trim())
+
+  return `
+    <div
+      class="skill-context-menu"
+      data-role="memory-context-menu"
+      style="left:${Number(x) || 0}px;top:${Number(y) || 0}px"
+    >
+      <div class="skill-context-menu__title">${label}</div>
+      <button type="button" data-memory-menu-action="rename">重命名</button>
+      <button type="button" data-memory-menu-action="delete">删除</button>
+    </div>
+  `
+}
+
 export function renderWarehouseContextMenuHtml(contextMenu = {}) {
   const {
     open = false,
@@ -791,6 +933,70 @@ export function renderWarehouseContextMenuHtml(contextMenu = {}) {
     >
       <div class="skill-context-menu__title">${escapeHtml(title)}</div>
       <button type="button" data-warehouse-menu-action="create-skill">新建 Skill</button>
+    </div>
+  `
+}
+
+export function renderDroppedSkillImportConfirmHtml(confirmState = {}) {
+  const {
+    open = false,
+    name = ''
+  } = confirmState || {}
+
+  if (!open) {
+    return ''
+  }
+
+  const label = escapeHtml(name || '当前 Skill')
+
+  return `
+    <div class="app-modal" data-role="dropped-skill-import-confirm">
+      <div class="app-modal__scrim" data-dropped-skill-confirm-action="cancel"></div>
+      <div class="app-modal__dialog">
+        <p class="panel-kicker">Skill Import</p>
+        <h3>覆盖现有 Skill</h3>
+        <p class="sidebar-copy">发现同名 Skill <strong>${label}</strong>，是否使用拖入内容覆盖现有目录？</p>
+        <div class="button-row compact">
+          <button type="button" class="primary compact-button" data-dropped-skill-confirm-action="confirm">覆盖</button>
+          <button type="button" class="ghost compact-button" data-dropped-skill-confirm-action="cancel">取消</button>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+export function renderMemoryRenameModalHtml(renameState = {}) {
+  const {
+    open = false,
+    draftId = '',
+    error = ''
+  } = renameState || {}
+
+  if (!open) {
+    return ''
+  }
+
+  return `
+    <div class="app-modal" data-role="memory-rename-modal">
+      <div class="app-modal__scrim" data-memory-rename-action="cancel"></div>
+      <div class="app-modal__dialog">
+        <p class="panel-kicker">Memory Rename</p>
+        <h3>重命名 Memory</h3>
+        <label class="field">
+          <span>Memory ID</span>
+          <input
+            id="memoryRenameInput"
+            type="text"
+            value="${escapeHtml(draftId)}"
+            spellcheck="false"
+          />
+        </label>
+        ${error ? `<p class="sidebar-copy" data-role="memory-rename-error">${escapeHtml(error)}</p>` : ''}
+        <div class="button-row compact">
+          <button type="button" class="primary compact-button" data-memory-rename-action="confirm">保存</button>
+          <button type="button" class="ghost compact-button" data-memory-rename-action="cancel">取消</button>
+        </div>
+      </div>
     </div>
   `
 }
@@ -818,6 +1024,9 @@ export function renderTreeContextMenuHtml(contextMenu = {}) {
   if (target === 'root' && entryKind === 'skill') {
     actions.push('<button type="button" data-tree-menu-action="rename-skill">重命名 Skill</button>')
     actions.push('<button type="button" data-tree-menu-action="delete-skill">删除 Skill</button>')
+  } else if (target === 'root' && entryKind === 'memory') {
+    actions.push('<button type="button" data-tree-menu-action="rename-memory">重命名 Memory</button>')
+    actions.push('<button type="button" data-tree-menu-action="delete-memory">删除 Memory</button>')
   } else if (target !== 'root') {
     actions.push('<button type="button" data-tree-menu-action="rename-path">重命名</button>')
     actions.push('<button type="button" data-tree-menu-action="delete-path">删除</button>')
@@ -1212,7 +1421,12 @@ export function createSkillsPageHtml({
   migrationOutput = null,
   gitImportResult = null,
   gitImportOutput = null,
+  createOpen = false,
+  createId = '',
+  createError = '',
+  createTargetLabel = '',
   skillContextMenu = null,
+  warehouseContextMenu = null,
   skillInteraction = null
 } = {}) {
   return `
@@ -1223,7 +1437,10 @@ export function createSkillsPageHtml({
             <p class="panel-kicker">Browse</p>
             <h2>Warehouse</h2>
           </div>
-          <button id="refresh" class="ghost">刷新</button>
+          <div class="button-row compact">
+            <button id="openCreateSkill" class="ghost compact-button" type="button" data-role="open-create-skill">新建 Skill</button>
+            <button id="refresh" class="ghost compact-button" type="button">刷新</button>
+          </div>
         </div>
         <div class="skills-toolbar">
           <label class="field">
@@ -1242,6 +1459,13 @@ export function createSkillsPageHtml({
             </select>
           </label>
         </div>
+        ${createOpen
+          ? renderCreateSkillInlineHtml({
+              createError,
+              createId,
+              createTargetLabel
+            })
+          : ''}
         ${renderSkillsImportPanelHtml({
           importExpanded,
           gitImportUrl,
@@ -1257,6 +1481,7 @@ export function createSkillsPageHtml({
           ${renderSkillGroupsHtml(skills, selectedSkillId, checkedSkillIds, skillInteraction)}
         </div>
         ${renderSkillContextMenuHtml(skillContextMenu)}
+        ${renderWarehouseContextMenuHtml(warehouseContextMenu)}
       </article>
 
       ${renderSkillsMetadataPanelHtml(selectedSkill, {
@@ -1768,6 +1993,7 @@ export function createAppShellHtml() {
 
         <section class="page-body" id="pageBody" data-role="page-body"></section>
       </section>
+      <div id="appModalRoot" data-role="app-modal-root"></div>
     </main>
   `
 }
