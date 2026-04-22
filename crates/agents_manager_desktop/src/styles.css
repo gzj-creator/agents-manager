@@ -1469,8 +1469,6 @@ textarea:focus {
 .mcp-server-row {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
   gap: 10px;
   min-height: 46px;
   padding: 8px 10px;
@@ -1481,9 +1479,59 @@ textarea:focus {
   text-align: left;
 }
 
+.mcp-server-row-shell {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.mcp-server-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-height: 100%;
+  border: 1px solid rgba(74, 57, 36, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 251, 245, 0.7);
+  cursor: pointer;
+}
+
+.mcp-server-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mcp-server-check__box {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid rgba(74, 57, 36, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 251, 245, 0.96);
+}
+
+.mcp-server-check input:checked + .mcp-server-check__box {
+  border-color: rgba(155, 77, 37, 0.5);
+  background: linear-gradient(135deg, rgba(155, 77, 37, 0.92) 0%, rgba(108, 52, 23, 0.92) 100%);
+  box-shadow: inset 0 0 0 3px rgba(255, 251, 245, 0.92);
+}
+
 .mcp-server-row.is-selected {
   border-color: rgba(155, 77, 37, 0.18);
   background: rgba(155, 77, 37, 0.12);
+}
+
+.mcp-server-row__main,
+.mcp-server-row__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mcp-server-row__main {
+  min-width: 0;
 }
 
 .mcp-server-row strong {
@@ -1492,11 +1540,34 @@ textarea:focus {
   line-height: 1.25;
 }
 
-.mcp-server-row span {
-  justify-self: end;
+.mcp-server-row__mode {
   color: var(--muted);
   font-size: 0.74rem;
   white-space: nowrap;
+}
+
+.mcp-state-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(47, 99, 68, 0.16);
+  background: rgba(47, 99, 68, 0.1);
+  color: #1f5e3f;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.mcp-state-pill.is-disabled {
+  border-color: rgba(122, 86, 46, 0.14);
+  background: rgba(122, 86, 46, 0.1);
+  color: #7a562e;
+}
+
+.mcp-server-section__actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
 .mcp-editor-panel {
@@ -1504,6 +1575,12 @@ textarea:focus {
   grid-template-rows: auto auto auto;
   align-content: start;
   gap: 16px;
+}
+
+.mcp-editor-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .mcp-editor-grid {

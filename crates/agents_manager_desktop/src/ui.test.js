@@ -339,6 +339,26 @@ test('main.js retries dropped skill import as overwrite after reloading skills w
   assert.match(source, /catch \(error\) \{[\s\S]*openDroppedSkillImportConfirm\(conflict,\s*candidate\)/)
 })
 
+test('main.js syncSkills retries with overwrite ids after confirming per-skill conflicts', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /async function syncSkills\(\)/)
+  assert.match(source, /invoke\('sync_global_skills_cmd',[\s\S]*overwrite_skill_ids:\s*\[\]/)
+  assert.match(source, /result\.conflicts\?\.length/)
+  assert.match(source, /for \(const conflict of result\.conflicts\)/)
+  assert.match(source, /window\.confirm\(/)
+  assert.match(source, /overwriteSkillIds\.push\(conflict\.stable_id\)/)
+  assert.match(source, /invoke\('sync_global_skills_cmd',[\s\S]*overwrite_skill_ids:\s*overwriteSkillIds/)
+})
+
+test('main.js syncSkills prints a friendly success message instead of dumping the raw report', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /function formatSyncSkillsSuccessMessage\(/)
+  assert.match(source, /print\(formatSyncSkillsSuccessMessage\(result,[\s\S]*'success'\)/)
+  assert.doesNotMatch(source, /print\(result,\s*'success'\)/)
+})
+
 test('main.js uses inline memory creation for create flow', () => {
   const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
 
@@ -1118,11 +1138,19 @@ test('createMcpPageHtml renders agent scope server list and editor surface', () 
     client: 'claude',
     scope: 'project',
     projectPath: '/tmp/project',
+    checkedServerNames: ['better-icons'],
     servers: [
       {
         name: 'better-icons',
         command: 'npx',
-        args: ['-y', 'better-icons']
+        args: ['-y', 'better-icons'],
+        enabled: true
+      },
+      {
+        name: 'openai-docs',
+        url: 'https://developers.openai.com/mcp',
+        args: [],
+        enabled: false
       }
     ],
     selectedServerName: 'better-icons'
@@ -1133,9 +1161,25 @@ test('createMcpPageHtml renders agent scope server list and editor surface', () 
   assert.match(html, /data-role="mcp-target-controls"/)
   assert.match(html, /data-role="mcp-server-list"/)
   assert.match(html, /data-role="mcp-editor"/)
+  assert.match(html, /data-mcp-check="better-icons"/)
+  assert.match(html, /data-role="mcp-enable-selected"/)
+  assert.match(html, /data-role="mcp-disable-selected"/)
+  assert.match(html, /已启用/)
+  assert.match(html, /禁用中/)
   assert.match(html, /better-icons/)
   assert.doesNotMatch(html, /MCP Target/)
   assert.doesNotMatch(html, /Server Editor/)
+})
+
+test('main.js tracks checked MCP servers and bulk enable disable actions', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /checkedServerNames:\s*\[\]/)
+  assert.match(source, /function toggleCheckedMcpServerName\(/)
+  assert.match(source, /function setEnabledStateForCheckedMcpServers\(/)
+  assert.match(source, /event\.target\.matches\('\[data-mcp-check\]'\)/)
+  assert.match(source, /case 'enableSelectedMcpServers':[\s\S]*setEnabledStateForCheckedMcpServers\(true\)/)
+  assert.match(source, /case 'disableSelectedMcpServers':[\s\S]*setEnabledStateForCheckedMcpServers\(false\)/)
 })
 
 test('createSettingsPageHtml renders warehouse path and advanced source controls', () => {

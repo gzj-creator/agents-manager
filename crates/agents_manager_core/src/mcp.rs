@@ -3,8 +3,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use toml_edit::{value, Array, DocumentMut, Item, Table};
 
+use crate::config::{save_app_config, AppConfig};
 use crate::error::{CoreError, Result};
+
+fn default_mcp_enabled() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum JsonMcpStyle {
@@ -95,6 +105,8 @@ impl McpTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpServerConfig {
     pub name: String,
+    #[serde(default = "default_mcp_enabled", skip_serializing_if = "is_true")]
+    pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
     #[serde(default)]
@@ -107,6 +119,7 @@ impl McpServerConfig {
     pub fn stdio(name: impl Into<String>, command: impl Into<String>, args: Vec<String>) -> Self {
         Self {
             name: name.into(),
+            enabled: true,
             command: Some(command.into()),
             args,
             url: None,
@@ -116,6 +129,7 @@ impl McpServerConfig {
     pub fn remote(name: impl Into<String>, url: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            enabled: true,
             command: None,
             args: Vec::new(),
             url: Some(url.into()),
@@ -155,18 +169,33 @@ pub fn save_mcp_config(target: &McpTarget, servers: Vec<McpServerConfig>) -> Res
         fs::create_dir_all(parent)?;
     }
 
+    let enabled_servers = servers
+        .into_iter()
+        .filter(|server| server.enabled)
+        .collect::<Vec<_>>();
+
     let mut next = match target {
         McpTarget::CursorProject { .. } | McpTarget::CursorGlobal { .. } => {
             let raw = read_optional_text_file(&path, "{}")?;
-            save_json_mcp(&raw, servers, JsonMcpStyle::Cursor, "cursor mcp.json")?
+            save_json_mcp(
+                &raw,
+                enabled_servers,
+                JsonMcpStyle::Cursor,
+                "cursor mcp.json",
+            )?
         }
         McpTarget::ClaudeProject { .. } | McpTarget::ClaudeGlobal { .. } => {
             let raw = read_optional_text_file(&path, "{}")?;
-            save_json_mcp(&raw, servers, JsonMcpStyle::Claude, "claude mcp json")?
+            save_json_mcp(
+                &raw,
+                enabled_servers,
+                JsonMcpStyle::Claude,
+                "claude mcp json",
+            )?
         }
         McpTarget::CodexGlobal { .. } => {
             let raw = read_optional_text_file(&path, "")?;
-            save_codex_global_toml(&raw, servers)?
+            save_codex_global_toml(&raw, enabled_servers)?
         }
         McpTarget::CodexProject { .. } => Err(CoreError::UnsupportedMcpTarget(
             "Codex does not support project-scoped MCP configuration".into(),
@@ -178,6 +207,61 @@ pub fn save_mcp_config(target: &McpTarget, servers: Vec<McpServerConfig>) -> Res
     }
     fs::write(path, next)?;
     Ok(())
+}
+
+pub fn load_managed_mcp_config(cfg: &AppConfig, target: &McpTarget) -> Result<McpClient> {
+    let mut client = load_mcp_config(target)?;
+    let target_key = target.config_path()?.display().to_string();
+
+    if let Some(disabled_servers) = cfg.mcp_disabled_servers.get(&target_key) {
+        for server in disabled_servers {
+            if client.servers.contains_key(&server.name) {
+                continue;
+            }
+
+            let mut disabled_server = server.clone();
+            disabled_server.enabled = false;
+            client
+                .servers
+                .insert(disabled_server.name.clone(), disabled_server);
+        }
+    }
+
+    Ok(client)
+}
+
+pub fn save_managed_mcp_config(
+    cfg: &AppConfig,
+    target: &McpTarget,
+    servers: Vec<McpServerConfig>,
+) -> Result<AppConfig> {
+    let target_key = target.config_path()?.display().to_string();
+    let mut enabled_servers = Vec::new();
+    let mut disabled_servers = Vec::new();
+
+    for mut server in servers {
+        if server.enabled {
+            server.enabled = true;
+            enabled_servers.push(server);
+        } else {
+            server.enabled = false;
+            disabled_servers.push(server);
+        }
+    }
+
+    save_mcp_config(target, enabled_servers)?;
+
+    let mut next_cfg = cfg.clone();
+    if disabled_servers.is_empty() {
+        next_cfg.mcp_disabled_servers.remove(&target_key);
+    } else {
+        next_cfg
+            .mcp_disabled_servers
+            .insert(target_key, disabled_servers);
+    }
+    save_app_config(&next_cfg)?;
+
+    Ok(next_cfg)
 }
 
 fn read_optional_text_file(path: &Path, default: &str) -> Result<String> {
@@ -354,30 +438,36 @@ fn load_codex_global_toml(raw: &str) -> Result<McpClient> {
 }
 
 fn save_codex_global_toml(raw: &str, servers: Vec<McpServerConfig>) -> Result<String> {
-    let mut root: toml::Value = if raw.trim().is_empty() {
-        toml::Value::Table(toml::map::Map::new())
+    let mut document = if raw.trim().is_empty() {
+        DocumentMut::new()
     } else {
-        toml::from_str(raw)?
+        raw.parse::<DocumentMut>().map_err(|error| {
+            CoreError::InvalidMcpConfig(format!("codex config.toml parse error: {error}"))
+        })?
     };
-    let tbl = root.as_table_mut().ok_or_else(|| {
-        CoreError::InvalidMcpConfig("codex config.toml root must be a TOML table".into())
-    })?;
-    let mut mcp_tbl = toml::map::Map::new();
-    for s in servers {
-        let mut server_tbl = toml::map::Map::new();
-        if let Some(command) = s.command {
-            server_tbl.insert("command".into(), toml::Value::String(command));
-            server_tbl.insert(
-                "args".into(),
-                toml::Value::Array(s.args.into_iter().map(toml::Value::String).collect()),
-            );
-        }
-        if let Some(url) = s.url {
-            server_tbl.insert("url".into(), toml::Value::String(url));
-        }
-        mcp_tbl.insert(s.name.clone(), toml::Value::Table(server_tbl));
-    }
-    tbl.insert("mcp_servers".into(), toml::Value::Table(mcp_tbl));
 
-    Ok(toml::to_string(&root)?)
+    if servers.is_empty() {
+        document.remove("mcp_servers");
+        return Ok(document.to_string());
+    }
+
+    let mut mcp_table = Table::new();
+    for server in servers {
+        let mut server_table = Table::new();
+        if let Some(command) = server.command {
+            server_table["command"] = value(command);
+            let mut args = Array::new();
+            for arg in server.args {
+                args.push(arg);
+            }
+            server_table["args"] = value(args);
+        }
+        if let Some(url) = server.url {
+            server_table["url"] = value(url);
+        }
+        mcp_table[&server.name] = Item::Table(server_table);
+    }
+
+    document["mcp_servers"] = Item::Table(mcp_table);
+    Ok(document.to_string())
 }

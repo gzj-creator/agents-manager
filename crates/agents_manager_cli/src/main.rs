@@ -420,6 +420,7 @@ mod tests {
             bootstrap_migration_done: false,
             library_roots: Vec::new(),
             default_profile: Some("claude".into()),
+            mcp_disabled_servers: Default::default(),
         };
         save_app_config(&cfg).unwrap();
 

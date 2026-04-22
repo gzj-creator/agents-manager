@@ -1,9 +1,11 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
+use crate::mcp::McpServerConfig;
 
 pub const APP_CONFIG_DIR_NAME: &str = "agents-manager";
 
@@ -21,6 +23,8 @@ pub struct AppConfig {
     pub library_roots: Vec<PathBuf>,
     #[serde(default)]
     pub default_profile: Option<String>,
+    #[serde(default)]
+    pub mcp_disabled_servers: BTreeMap<String, Vec<McpServerConfig>>,
 }
 
 impl Default for AppConfig {
@@ -32,6 +36,7 @@ impl Default for AppConfig {
             bootstrap_migration_done: false,
             library_roots: Vec::new(),
             default_profile: Some("claude".to_string()),
+            mcp_disabled_servers: BTreeMap::new(),
         }
     }
 }

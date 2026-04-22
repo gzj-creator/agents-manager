@@ -33,7 +33,10 @@ pub use error::{CoreError, Result};
 pub use git_import::{import_git_skills, GitImportDetail, GitImportReport};
 pub use init_project::{generate_init_project_command, init_project, InitMode, InitProjectReport};
 pub use library::{find_skill, scan_library, scan_warehouse, SkillEntry};
-pub use mcp::{load_mcp_config, save_mcp_config, McpClient, McpScope, McpServerConfig, McpTarget};
+pub use mcp::{
+    load_managed_mcp_config, load_mcp_config, save_managed_mcp_config, save_mcp_config, McpClient,
+    McpScope, McpServerConfig, McpTarget,
+};
 pub use memory::{
     create_memory, delete_memory, generate_init_memory_command, import_dropped_memory, init_memory,
     rename_memory, scan_memory_warehouse, CreateMemoryRequest, MemoryEntry,

@@ -12,10 +12,11 @@ mod tests {
         apply_to_project, bootstrap_legacy_migration, copy_paths_into_entry, create_memory,
         create_skill, delete_memory, delete_skill, doctor, generate_init_memory_command,
         import_dropped_memory, import_dropped_skill, import_git_skills, init_memory, init_project,
-        load_mcp_config, load_skill_registry, rename_memory, rename_skill, save_mcp_config,
-        save_skill_registry, scan_memory_warehouse, scan_warehouse, update_editable_settings,
-        update_skill_metadata, AppConfig, ApplySelections, ClientKind, ClientRoots, CoreError,
-        CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate, InitMode, InstallMode,
+        load_managed_mcp_config, load_mcp_config, load_skill_registry, rename_memory, rename_skill,
+        save_managed_mcp_config, save_mcp_config, save_skill_registry, scan_memory_warehouse,
+        scan_warehouse, sync_global_skills, update_editable_settings, update_skill_metadata,
+        AppConfig, ApplySelections, ClientKind, ClientRoots, CoreError, CreateMemoryRequest,
+        CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest, InitMode, InstallMode,
         McpServerConfig, McpTarget, Profile, RegistrySkill, SkillEntry, SkillRegistry,
     };
 
@@ -71,6 +72,7 @@ mod tests {
                     bootstrap_migration_done: false,
                     library_roots: Vec::new(),
                     default_profile: Some("claude".into()),
+                    mcp_disabled_servers: Default::default(),
                 },
                 roots: ClientRoots::from_home(&home),
                 home,
@@ -175,6 +177,7 @@ mod tests {
             bootstrap_migration_done: false,
             library_roots: vec![lib.clone()],
             default_profile: Some("claude".into()),
+            mcp_disabled_servers: Default::default(),
         };
         let profile = Profile {
             id: "claude".into(),
@@ -198,6 +201,95 @@ mod tests {
     }
 
     #[test]
+    fn sync_global_skills_reports_conflicts_before_writing_anything() {
+        let ctx = TestCtx::new();
+        setup_skill_with_body(&ctx.cfg.skill_warehouse, "alpha", "warehouse alpha");
+        setup_skill_with_body(&ctx.cfg.skill_warehouse, "beta", "warehouse beta");
+        ctx.create_client_skill(ClientKind::Codex, "alpha", "client alpha");
+
+        let warehouse = scan_warehouse(&ctx.cfg).unwrap();
+        let alpha_id = warehouse
+            .iter()
+            .find(|entry| entry.id == "alpha")
+            .unwrap()
+            .stable_id;
+        let beta_id = warehouse
+            .iter()
+            .find(|entry| entry.id == "beta")
+            .unwrap()
+            .stable_id;
+
+        let report = sync_global_skills(
+            &ctx.cfg,
+            &ctx.roots,
+            &GlobalSyncRequest {
+                client: ClientKind::Codex,
+                skill_ids: vec![alpha_id, beta_id],
+                overwrite_skill_ids: Vec::new(),
+                mode: InstallMode::Copy,
+            },
+        )
+        .unwrap();
+
+        assert!(report.synced_skill_ids.is_empty());
+        assert!(report.overwritten_skill_ids.is_empty());
+        assert_eq!(report.conflicts.len(), 1);
+        assert_eq!(report.conflicts[0].stable_id, alpha_id);
+        assert_eq!(report.conflicts[0].id, "alpha");
+        assert!(!ctx
+            .roots
+            .global_skill_root(ClientKind::Codex)
+            .join("beta")
+            .exists());
+    }
+
+    #[test]
+    fn sync_global_skills_overwrites_confirmed_conflicts_and_syncs_remaining_skills() {
+        let ctx = TestCtx::new();
+        setup_skill_with_body(&ctx.cfg.skill_warehouse, "alpha", "warehouse alpha");
+        setup_skill_with_body(&ctx.cfg.skill_warehouse, "beta", "warehouse beta");
+        ctx.create_client_skill(ClientKind::Codex, "alpha", "client alpha");
+
+        let warehouse = scan_warehouse(&ctx.cfg).unwrap();
+        let alpha_id = warehouse
+            .iter()
+            .find(|entry| entry.id == "alpha")
+            .unwrap()
+            .stable_id;
+        let beta_id = warehouse
+            .iter()
+            .find(|entry| entry.id == "beta")
+            .unwrap()
+            .stable_id;
+
+        let report = sync_global_skills(
+            &ctx.cfg,
+            &ctx.roots,
+            &GlobalSyncRequest {
+                client: ClientKind::Codex,
+                skill_ids: vec![alpha_id, beta_id],
+                overwrite_skill_ids: vec![alpha_id],
+                mode: InstallMode::Copy,
+            },
+        )
+        .unwrap();
+
+        assert!(report.conflicts.is_empty());
+        assert_eq!(report.overwritten_skill_ids, vec![alpha_id]);
+        assert_eq!(report.synced_skill_ids, vec![beta_id]);
+
+        let alpha_dir = ctx.roots.global_skill_root(ClientKind::Codex).join("alpha");
+        let beta_dir = ctx.roots.global_skill_root(ClientKind::Codex).join("beta");
+        let alpha_skill = fs::read_to_string(alpha_dir.join("SKILL.md")).unwrap();
+        let alpha_notes = fs::read_to_string(alpha_dir.join("notes.txt")).unwrap();
+        let beta_notes = fs::read_to_string(beta_dir.join("notes.txt")).unwrap();
+
+        assert!(alpha_skill.contains("warehouse alpha"));
+        assert!(alpha_notes.contains("warehouse alpha"));
+        assert!(beta_notes.contains("warehouse beta"));
+    }
+
+    #[test]
     fn doctor_reports_broken_symlink() {
         let tmp = tempdir().unwrap();
         let lib = tmp.path().join("lib");
@@ -213,6 +305,7 @@ mod tests {
             bootstrap_migration_done: false,
             library_roots: vec![lib],
             default_profile: Some("claude".into()),
+            mcp_disabled_servers: Default::default(),
         };
         let profile = Profile {
             id: "claude".into(),
@@ -1417,6 +1510,142 @@ mod tests {
                 vec!["-y".into(), "better-icons".into()],
             ))
         );
+    }
+
+    #[test]
+    fn load_managed_mcp_config_merges_disabled_drafts_and_prefers_enabled_target_copy() {
+        let ctx = TestCtx::new();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvVarGuard::set(
+            "AGENTS_MANAGER_CONFIG_DIR",
+            ctx.tmp.path().join("config-dir").as_os_str(),
+        );
+
+        let target = McpTarget::codex_global(&ctx.home);
+        fs::create_dir_all(ctx.home.join(".codex")).unwrap();
+        fs::write(
+            ctx.home.join(".codex/config.toml"),
+            "[mcp_servers.better-icons]\ncommand = \"uvx\"\nargs = [\"better-icons\"]\n",
+        )
+        .unwrap();
+
+        let mut cfg = ctx.cfg.clone();
+        let target_key = target.config_path().unwrap().display().to_string();
+        let mut disabled_better_icons = McpServerConfig::stdio(
+            "better-icons",
+            "npx",
+            vec!["-y".into(), "better-icons".into()],
+        );
+        disabled_better_icons.enabled = false;
+        let mut disabled_openai_docs =
+            McpServerConfig::remote("openai-docs", "https://developers.openai.com/mcp");
+        disabled_openai_docs.enabled = false;
+        cfg.mcp_disabled_servers.insert(
+            target_key,
+            vec![disabled_better_icons, disabled_openai_docs],
+        );
+
+        let managed = load_managed_mcp_config(&cfg, &target).unwrap();
+
+        assert_eq!(managed.servers.len(), 2);
+        assert_eq!(
+            managed.servers.get("better-icons"),
+            Some(&McpServerConfig {
+                enabled: true,
+                ..McpServerConfig::stdio("better-icons", "uvx", vec!["better-icons".into()])
+            })
+        );
+        assert_eq!(
+            managed.servers.get("openai-docs"),
+            Some(&McpServerConfig {
+                enabled: false,
+                ..McpServerConfig::remote("openai-docs", "https://developers.openai.com/mcp")
+            })
+        );
+    }
+
+    #[test]
+    fn save_managed_mcp_config_writes_only_enabled_servers_and_persists_disabled_drafts() {
+        let ctx = TestCtx::new();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvVarGuard::set(
+            "AGENTS_MANAGER_CONFIG_DIR",
+            ctx.tmp.path().join("config-dir").as_os_str(),
+        );
+
+        let target = McpTarget::codex_global(&ctx.home);
+        let mut disabled_openai_docs =
+            McpServerConfig::remote("openai-docs", "https://developers.openai.com/mcp");
+        disabled_openai_docs.enabled = false;
+
+        let updated = save_managed_mcp_config(
+            &ctx.cfg,
+            &target,
+            vec![
+                McpServerConfig::stdio(
+                    "better-icons",
+                    "npx",
+                    vec!["-y".into(), "better-icons".into()],
+                ),
+                disabled_openai_docs.clone(),
+            ],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(ctx.home.join(".codex/config.toml")).unwrap();
+        assert!(raw.contains("[mcp_servers.better-icons]"));
+        assert!(!raw.contains("[mcp_servers.openai-docs]"));
+
+        let target_key = target.config_path().unwrap().display().to_string();
+        assert_eq!(
+            updated.mcp_disabled_servers.get(&target_key),
+            Some(&vec![disabled_openai_docs])
+        );
+    }
+
+    #[test]
+    fn save_managed_codex_global_mcp_preserves_non_mcp_content_while_updating_mcp_table() {
+        let ctx = TestCtx::new();
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvVarGuard::set(
+            "AGENTS_MANAGER_CONFIG_DIR",
+            ctx.tmp.path().join("config-dir").as_os_str(),
+        );
+
+        fs::create_dir_all(ctx.home.join(".codex")).unwrap();
+        fs::write(
+            ctx.home.join(".codex/config.toml"),
+            "# keep me\nmodel = \"gpt-5\"\n[profiles.default]\napproval = \"never\"\n[mcp_servers.old]\ncommand = \"npx\"\nargs = [\"old\"]\n",
+        )
+        .unwrap();
+
+        let target = McpTarget::codex_global(&ctx.home);
+        let mut disabled_openai_docs =
+            McpServerConfig::remote("openai-docs", "https://developers.openai.com/mcp");
+        disabled_openai_docs.enabled = false;
+
+        save_managed_mcp_config(
+            &ctx.cfg,
+            &target,
+            vec![
+                McpServerConfig::stdio(
+                    "better-icons",
+                    "npx",
+                    vec!["-y".into(), "better-icons".into()],
+                ),
+                disabled_openai_docs,
+            ],
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(ctx.home.join(".codex/config.toml")).unwrap();
+        assert!(raw.contains("# keep me"));
+        assert!(raw.contains("model = \"gpt-5\""));
+        assert!(raw.contains("[profiles.default]"));
+        assert!(raw.contains("approval = \"never\""));
+        assert!(raw.contains("[mcp_servers.better-icons]"));
+        assert!(!raw.contains("[mcp_servers.old]"));
+        assert!(!raw.contains("[mcp_servers.openai-docs]"));
     }
 
     #[test]

@@ -1797,26 +1797,49 @@ export function createSettingsPageHtml({
   `
 }
 
-function renderMcpServerListHtml(servers = [], selectedServerName = '') {
+function renderMcpServerStateHtml(enabled = true) {
+  return `
+    <span class="mcp-state-pill${enabled ? '' : ' is-disabled'}">
+      ${enabled ? '已启用' : '禁用中'}
+    </span>
+  `
+}
+
+function renderMcpServerListHtml(servers = [], selectedServerName = '', checkedServerNames = []) {
   if (!servers.length) {
     return '<div class="empty-state">当前目标还没有 MCP server</div>'
   }
+
+  const checkedSet = new Set(checkedServerNames)
 
   return servers
     .map(server => {
       const name = escapeHtml(server.name)
       const isSelected = server.name === selectedServerName ? ' is-selected' : ''
       const mode = server.url ? 'Remote' : 'stdio'
+      const checked = checkedSet.has(server.name) ? ' checked' : ''
+      const enabled = server.enabled !== false
 
       return `
-        <button
-          class="mcp-server-row${isSelected}"
-          type="button"
-          data-mcp-server="${name}"
-        >
-          <strong>${name}</strong>
-          <span>${mode}</span>
-        </button>
+        <div class="mcp-server-row-shell">
+          <label class="mcp-server-check" aria-label="选择 ${name}">
+            <input type="checkbox" data-mcp-check="${name}"${checked} />
+            <span class="mcp-server-check__box" aria-hidden="true"></span>
+          </label>
+          <button
+            class="mcp-server-row${isSelected}"
+            type="button"
+            data-mcp-server="${name}"
+          >
+            <div class="mcp-server-row__main">
+              <strong>${name}</strong>
+              <span class="mcp-server-row__mode">${mode}</span>
+            </div>
+            <div class="mcp-server-row__meta">
+              ${renderMcpServerStateHtml(enabled)}
+            </div>
+          </button>
+        </div>
       `
     })
     .join('')
@@ -1828,12 +1851,14 @@ export function createMcpPageHtml({
   projectPath = '',
   targetPath = '',
   servers = [],
+  checkedServerNames = [],
   selectedServerName = '',
   editor = {},
   disabledProjectScope = false
 } = {}) {
   const mode = editor.transport || (editor.url ? 'remote' : 'stdio')
   const serverCount = servers.length
+  const selectedServer = servers.find(server => server.name === selectedServerName) || null
 
   return `
     <section class="page-grid page-grid--mcp">
@@ -1893,18 +1918,23 @@ export function createMcpPageHtml({
               <h3>Servers</h3>
               <span>${serverCount}</span>
             </div>
+          </div>
+          <div class="button-row compact mcp-server-section__actions">
+            <button id="enableSelectedMcpServers" class="secondary compact-button" type="button" data-role="mcp-enable-selected">启用所选</button>
+            <button id="disableSelectedMcpServers" class="secondary compact-button" type="button" data-role="mcp-disable-selected">禁用所选</button>
             <button id="newMcpServer" class="secondary compact-button" type="button">新建</button>
           </div>
           <div class="mcp-server-list" data-role="mcp-server-list">
-            ${renderMcpServerListHtml(servers, selectedServerName)}
+            ${renderMcpServerListHtml(servers, selectedServerName, checkedServerNames)}
           </div>
         </section>
       </article>
 
       <article class="panel mcp-editor-panel" data-role="mcp-editor">
         <div class="panel-head compact-head">
-          <div>
+          <div class="mcp-editor-heading">
             <h2>${escapeHtml(selectedServerName || '新建 MCP Server')}</h2>
+            ${selectedServer ? renderMcpServerStateHtml(selectedServer.enabled !== false) : ''}
           </div>
           <button id="saveMcpConfig" class="primary" type="button">保存 MCP 配置</button>
         </div>

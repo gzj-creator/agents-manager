@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -35,13 +36,24 @@ pub struct ApplySelections {
 pub struct GlobalSyncRequest {
     pub client: ClientKind,
     pub skill_ids: Vec<u64>,
+    pub overwrite_skill_ids: Vec<u64>,
     pub mode: InstallMode,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GlobalSyncConflict {
+    pub stable_id: u64,
+    pub id: String,
+    pub target_path: PathBuf,
 }
 
 #[derive(Debug, Default, Serialize)]
 pub struct GlobalSyncReport {
     pub synced_skill_ids: Vec<u64>,
+    pub overwritten_skill_ids: Vec<u64>,
+    pub skipped_skill_ids: Vec<u64>,
     pub invalid_skill_ids: Vec<u64>,
+    pub conflicts: Vec<GlobalSyncConflict>,
     pub target_root: PathBuf,
 }
 
@@ -137,12 +149,18 @@ pub fn sync_global_skills(
     let entries = scan_warehouse(cfg)?;
     let target_root = roots.global_skill_root(request.client);
     fs::create_dir_all(&target_root)?;
+    let overwrite_skill_ids = request
+        .overwrite_skill_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
 
     let mut apply_report = ApplyReport::default();
     let mut report = GlobalSyncReport {
         target_root,
         ..GlobalSyncReport::default()
     };
+    let mut planned = Vec::new();
 
     for stable_id in &request.skill_ids {
         let Some(entry) = entries.iter().find(|entry| entry.stable_id == *stable_id) else {
@@ -153,17 +171,119 @@ pub fn sync_global_skills(
         let dest_dir = report
             .target_root
             .join(entry.path.file_name().unwrap_or_default());
-        apply_one_dir(
-            &entry.path,
-            &dest_dir,
-            request.mode,
-            &mut apply_report,
-            &entry.id,
-        )?;
-        report.synced_skill_ids.push(*stable_id);
+        match classify_global_sync_target(&entry.path, &dest_dir, request.mode)? {
+            GlobalSyncTargetState::Ready => planned.push((entry.clone(), dest_dir, false)),
+            GlobalSyncTargetState::AlreadySynced => report.skipped_skill_ids.push(*stable_id),
+            GlobalSyncTargetState::Conflict => {
+                if overwrite_skill_ids.contains(stable_id) {
+                    planned.push((entry.clone(), dest_dir, true));
+                } else {
+                    report.conflicts.push(GlobalSyncConflict {
+                        stable_id: *stable_id,
+                        id: entry.id.clone(),
+                        target_path: dest_dir,
+                    });
+                }
+            }
+        }
+    }
+
+    if !report.conflicts.is_empty() {
+        return Ok(report);
+    }
+
+    for (entry, dest_dir, overwrite) in planned {
+        if overwrite {
+            overwrite_one_dir(
+                &entry.path,
+                &dest_dir,
+                request.mode,
+                &mut apply_report,
+                &entry.id,
+            )?;
+            report.overwritten_skill_ids.push(entry.stable_id);
+        } else {
+            apply_one_dir(
+                &entry.path,
+                &dest_dir,
+                request.mode,
+                &mut apply_report,
+                &entry.id,
+            )?;
+            report.synced_skill_ids.push(entry.stable_id);
+        }
     }
 
     Ok(report)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalSyncTargetState {
+    Ready,
+    AlreadySynced,
+    Conflict,
+}
+
+fn classify_global_sync_target(
+    src: &Path,
+    dest: &Path,
+    mode: InstallMode,
+) -> Result<GlobalSyncTargetState> {
+    let src = fs::canonicalize(src)?;
+
+    match mode {
+        InstallMode::Symlink => {
+            if dest.exists() || dest.symlink_metadata().is_ok() {
+                if let Ok(meta) = fs::symlink_metadata(dest) {
+                    if meta.file_type().is_symlink() {
+                        if let Ok(target) = fs::read_link(dest) {
+                            if fs::canonicalize(&target).ok().as_ref() == Some(&src) {
+                                return Ok(GlobalSyncTargetState::AlreadySynced);
+                            }
+                        }
+                    }
+                }
+                return Ok(GlobalSyncTargetState::Conflict);
+            }
+
+            Ok(GlobalSyncTargetState::Ready)
+        }
+        InstallMode::Copy => {
+            if dest.exists() || dest.symlink_metadata().is_ok() {
+                return Ok(GlobalSyncTargetState::Conflict);
+            }
+
+            Ok(GlobalSyncTargetState::Ready)
+        }
+    }
+}
+
+fn overwrite_one_dir(
+    src: &Path,
+    dest: &Path,
+    mode: InstallMode,
+    report: &mut ApplyReport,
+    id: &str,
+) -> Result<()> {
+    remove_existing_path(dest)?;
+    apply_one_dir(src, dest, mode, report, id)
+}
+
+fn remove_existing_path(path: &Path) -> Result<()> {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return Ok(());
+    };
+
+    if meta.file_type().is_symlink() || meta.is_file() {
+        fs::remove_file(path)?;
+        return Ok(());
+    }
+
+    if meta.is_dir() {
+        fs::remove_dir_all(path)?;
+    }
+
+    Ok(())
 }
 
 fn resolve_skill_ids(selections: &ApplySelections, entries: &[SkillEntry]) -> Result<Vec<String>> {

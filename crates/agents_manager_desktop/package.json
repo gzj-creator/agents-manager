@@ -1,12 +1,13 @@
 {
   "name": "agents-manager-desktop",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test src/ui.test.js src/capabilities.test.js src/icon-assets.test.js",
+    "test": "node --test src/ui.test.js src/capabilities.test.js src/icon-assets.test.js scripts/macos-package.test.mjs",
     "build": "vite build",
+    "package:macos": "node ./scripts/macos-package.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },

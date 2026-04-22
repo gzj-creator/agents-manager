@@ -176,6 +176,7 @@ const state = {
     projectPath: '',
     targetPath: '',
     servers: [],
+    checkedServerNames: [],
     selectedServerName: '',
     editor: {
       name: '',
@@ -226,6 +227,8 @@ const ACTION_BUTTON_IDS = [
   'reloadMcp',
   'pickMcpProject',
   'newMcpServer',
+  'enableSelectedMcpServers',
+  'disableSelectedMcpServers',
   'applyBetterIconsDemo',
   'applyOpenAiDocsDemo',
   'saveMcpServer',
@@ -503,6 +506,39 @@ function distributionSummary() {
   return `当前 skill：${skillLabel(selectedSkill())}`
 }
 
+function clientDisplayName(client = state.client) {
+  return {
+    codex: 'Codex',
+    claude: 'Claude',
+    cursor: 'Cursor'
+  }[client] || client
+}
+
+function formatSyncSkillsSuccessMessage(result = {}, client = state.client) {
+  const syncedCount = (result.synced_skill_ids || []).length
+  const overwrittenCount = (result.overwritten_skill_ids || []).length
+  const skippedCount = (result.skipped_skill_ids || []).length
+  const invalidCount = (result.invalid_skill_ids || []).length
+  const totalCount = syncedCount + overwrittenCount
+  const parts = [
+    totalCount
+      ? `已同步 ${totalCount} 个 Skill 到 ${clientDisplayName(client)}`
+      : `${clientDisplayName(client)} 已是最新`
+  ]
+
+  if (overwrittenCount) {
+    parts.push(`覆盖 ${overwrittenCount} 个`)
+  }
+  if (skippedCount) {
+    parts.push(`已存在且无需处理 ${skippedCount} 个`)
+  }
+  if (invalidCount) {
+    parts.push(`忽略 ${invalidCount} 个无效项`)
+  }
+
+  return `${parts.join('，')}。`
+}
+
 function resetEditorSelection() {
   state.tree = null
   state.selectedPath = ''
@@ -778,8 +814,14 @@ function mcpRequestPayload() {
   }
 }
 
+function sortMcpServers(servers = []) {
+  return [...servers].sort((left, right) => left.name.localeCompare(right.name))
+}
+
 function applyMcpServers(servers = []) {
-  state.mcp.servers = [...servers].sort((left, right) => left.name.localeCompare(right.name))
+  state.mcp.servers = sortMcpServers(servers)
+  const availableNames = new Set(state.mcp.servers.map(server => server.name))
+  state.mcp.checkedServerNames = state.mcp.checkedServerNames.filter(name => availableNames.has(name))
   if (
     state.mcp.selectedServerName &&
     state.mcp.servers.some(server => server.name === state.mcp.selectedServerName)
@@ -791,6 +833,36 @@ function applyMcpServers(servers = []) {
   const first = state.mcp.servers[0] || null
   state.mcp.selectedServerName = first?.name || ''
   state.mcp.editor = createMcpEditorState(first)
+}
+
+function checkedMcpServers() {
+  const checkedNames = new Set(state.mcp.checkedServerNames)
+  return state.mcp.servers.filter(server => checkedNames.has(server.name))
+}
+
+function toggleCheckedMcpServerName(name, checked) {
+  const next = new Set(state.mcp.checkedServerNames)
+  if (checked) {
+    next.add(name)
+  } else {
+    next.delete(name)
+  }
+  state.mcp.checkedServerNames = [...next]
+}
+
+function setEnabledStateForCheckedMcpServers(enabled) {
+  const checkedNames = new Set(state.mcp.checkedServerNames)
+  if (!checkedNames.size) {
+    return
+  }
+
+  state.mcp.servers = sortMcpServers(
+    state.mcp.servers.map(server => (
+      checkedNames.has(server.name)
+        ? { ...server, enabled }
+        : server
+    ))
+  )
 }
 
 function markCommandCopied() {
@@ -944,6 +1016,7 @@ function renderCurrentPage() {
       projectPath: state.mcp.projectPath,
       targetPath: state.mcp.targetPath,
       servers: state.mcp.servers,
+      checkedServerNames: state.mcp.checkedServerNames,
       selectedServerName: state.mcp.selectedServerName,
       editor: state.mcp.editor,
       disabledProjectScope: mcpProjectScopeDisabled()
@@ -1136,6 +1209,18 @@ function syncActionUi() {
   const pickMcpProject = document.getElementById('pickMcpProject')
   if (pickMcpProject) {
     pickMcpProject.disabled = state.action.busy || state.mcp.scope !== 'project'
+  }
+
+  const enableSelectedMcpServers = document.getElementById('enableSelectedMcpServers')
+  if (enableSelectedMcpServers) {
+    enableSelectedMcpServers.disabled =
+      state.action.busy || !checkedMcpServers().some(server => server.enabled === false)
+  }
+
+  const disableSelectedMcpServers = document.getElementById('disableSelectedMcpServers')
+  if (disableSelectedMcpServers) {
+    disableSelectedMcpServers.disabled =
+      state.action.busy || !checkedMcpServers().some(server => server.enabled !== false)
   }
 
   const saveMcpServer = document.getElementById('saveMcpServer')
@@ -1601,6 +1686,7 @@ function buildMcpServerFromEditor() {
     }
     return {
       name,
+      enabled: selectedMcpServer()?.enabled ?? true,
       command: null,
       args: [],
       url
@@ -1614,6 +1700,7 @@ function buildMcpServerFromEditor() {
 
   return {
     name,
+    enabled: selectedMcpServer()?.enabled ?? true,
     command,
     args: [...state.mcp.editor.args],
     url: null
@@ -1642,6 +1729,7 @@ async function loadMcpConfigForCurrentTarget() {
   if (state.mcp.scope === 'project' && !state.mcp.projectPath.trim()) {
     state.mcp.targetPath = ''
     state.mcp.selectedServerName = ''
+    state.mcp.checkedServerNames = []
     state.mcp.editor = createMcpEditorState()
     state.mcp.servers = []
     syncAll()
@@ -2444,14 +2532,49 @@ async function syncSkills() {
     throw new Error('请先选择一个 skill')
   }
 
-  const result = await invoke('sync_global_skills_cmd', {
+  let result = await invoke('sync_global_skills_cmd', {
     req: {
       client: state.client,
       skill_ids: skillIds,
+      overwrite_skill_ids: [],
       mode: state.installMode
     }
   })
-  print(result, 'success')
+
+  if (result.conflicts?.length) {
+    const conflictIds = new Set(result.conflicts.map(conflict => conflict.stable_id))
+    const overwriteSkillIds = []
+
+    for (const conflict of result.conflicts) {
+      const confirmed = window.confirm(`客户端里已存在 Skill ${conflict.id}，是否覆盖？`)
+      if (confirmed) {
+        overwriteSkillIds.push(conflict.stable_id)
+      }
+    }
+
+    const nextSkillIds = skillIds.filter(skillId =>
+      !conflictIds.has(skillId) || overwriteSkillIds.includes(skillId)
+    )
+    if (!nextSkillIds.length) {
+      print('已取消覆盖，未同步任何 Skill。')
+      return ACTION_CANCELLED
+    }
+
+    result = await invoke('sync_global_skills_cmd', {
+      req: {
+        client: state.client,
+        skill_ids: nextSkillIds,
+        overwrite_skill_ids: overwriteSkillIds,
+        mode: state.installMode
+      }
+    })
+
+    if (result.conflicts?.length) {
+      throw new Error('同步时仍检测到冲突，请重新尝试。')
+    }
+  }
+
+  print(formatSyncSkillsSuccessMessage(result, state.client), 'success')
 }
 
 async function generateCommand() {
@@ -2844,6 +2967,12 @@ function bindEvents() {
     if (event.target.matches('[data-skill-check]')) {
       toggleCheckedSkillId(Number(event.target.dataset.skillCheck), event.target.checked)
       resetGeneratedCommand()
+      syncAll()
+      return
+    }
+
+    if (event.target.matches('[data-mcp-check]')) {
+      toggleCheckedMcpServerName(event.target.dataset.mcpCheck, event.target.checked)
       syncAll()
       return
     }
@@ -3530,6 +3659,14 @@ function bindEvents() {
           return
         case 'newMcpServer':
           resetMcpEditor()
+          return
+        case 'enableSelectedMcpServers':
+          setEnabledStateForCheckedMcpServers(true)
+          syncAll()
+          return
+        case 'disableSelectedMcpServers':
+          setEnabledStateForCheckedMcpServers(false)
+          syncAll()
           return
         case 'applyBetterIconsDemo':
           applyMcpDemo(MCP_DEMOS.betterIcons)

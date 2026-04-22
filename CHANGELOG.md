@@ -12,6 +12,23 @@
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-04-22
+
+### Added
+
+- 桌面端 MCP 页面支持多选 server 并批量启用或禁用，同时在列表和编辑区展示启用状态。
+- `sync-global-skills` 补齐同名冲突返回与逐项覆盖能力，桌面端同步到客户端时会逐个确认是否覆盖已有 Skill，并在完成后给出明确成功反馈。
+- 新增稳定的 macOS 打包脚本与对应测试，可直接生成覆盖安装到 `/Applications` 的 `agents-manager.pkg`。
+
+### Changed
+
+- MCP 配置读写改为区分“客户端真实启用项”和“agents-manager 保存的禁用草稿”，重新启用时不会丢失已禁用 server 的配置内容。
+- Codex 的 `config.toml` 现在只定向更新 `[mcp_servers]`，保留模型、profiles 等非 MCP 配置内容不被改写。
+
+### Fixed
+
+- 修复同步客户端时一旦遇到冲突就中断且无覆盖入口的问题，并避免在冲突确认前发生部分 Skill 已写入、部分未写入的半完成状态。
+
 ## [v0.2.0] - 2026-04-21
 
 ### Added

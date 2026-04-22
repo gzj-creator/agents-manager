@@ -7,11 +7,11 @@ use agents_manager_core::{
     bootstrap_legacy_migration, copy_paths_into_entry, create_memory, create_skill, delete_memory,
     delete_skill, generate_init_memory_command, generate_init_project_command,
     import_dropped_memory, import_dropped_skill, import_git_skills, load_app_config,
-    load_mcp_config, migrate_legacy_skills, preview_dropped_skill, rename_memory, rename_skill,
-    save_app_config, save_mcp_config, scan_memory_warehouse, scan_warehouse, sync_global_skills,
-    update_editable_settings, update_skill_metadata, ClientKind, ClientRoots, CreateMemoryRequest,
-    CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest, InstallMode, McpServerConfig,
-    McpTarget,
+    load_managed_mcp_config, migrate_legacy_skills, preview_dropped_skill, rename_memory,
+    rename_skill, save_app_config, save_managed_mcp_config, scan_memory_warehouse, scan_warehouse,
+    sync_global_skills, update_editable_settings, update_skill_metadata, ClientKind, ClientRoots,
+    CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest,
+    InstallMode, McpServerConfig, McpTarget,
 };
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
@@ -89,6 +89,8 @@ struct RenameMemoryPathReq {
 struct SyncSkillsReq {
     client: String,
     skill_ids: Vec<u64>,
+    #[serde(default)]
+    overwrite_skill_ids: Vec<u64>,
     mode: Option<String>,
 }
 
@@ -407,6 +409,7 @@ fn sync_global_skills_cmd(req: SyncSkillsReq) -> Result<serde_json::Value, Strin
         &GlobalSyncRequest {
             client: parse_client(&req.client)?,
             skill_ids: req.skill_ids,
+            overwrite_skill_ids: req.overwrite_skill_ids,
             mode: parse_mode(req.mode.as_deref()),
         },
     )
@@ -518,9 +521,10 @@ fn save_editable_settings_cmd(req: SaveEditableSettingsReq) -> Result<serde_json
 
 #[tauri::command]
 fn load_mcp_config_cmd(req: McpConfigReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
     let target = resolve_mcp_target(&req)?;
     let target_path = target.config_path().map_err(|e| e.to_string())?;
-    let config = load_mcp_config(&target).map_err(|e| e.to_string())?;
+    let config = load_managed_mcp_config(&cfg, &target).map_err(|e| e.to_string())?;
     let payload = McpConfigPayload {
         target_path: target_path.display().to_string(),
         servers: config.servers.into_values().collect(),
@@ -530,14 +534,16 @@ fn load_mcp_config_cmd(req: McpConfigReq) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn save_mcp_config_cmd(req: SaveMcpConfigReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
     let target = resolve_mcp_target(&McpConfigReq {
         client: req.client,
         scope: req.scope,
         project_path: req.project_path,
     })?;
     let target_path = target.config_path().map_err(|e| e.to_string())?;
-    save_mcp_config(&target, req.servers).map_err(|e| e.to_string())?;
-    let config = load_mcp_config(&target).map_err(|e| e.to_string())?;
+    let updated_cfg =
+        save_managed_mcp_config(&cfg, &target, req.servers).map_err(|e| e.to_string())?;
+    let config = load_managed_mcp_config(&updated_cfg, &target).map_err(|e| e.to_string())?;
     let payload = McpConfigPayload {
         target_path: target_path.display().to_string(),
         servers: config.servers.into_values().collect(),

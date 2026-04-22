@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use tempfile::TempDir;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::config::AppConfig;
@@ -201,30 +201,18 @@ fn is_git_dir(entry: &DirEntry) -> bool {
 }
 
 struct TempCheckout {
-    path: PathBuf,
+    dir: TempDir,
 }
 
 impl TempCheckout {
     fn new() -> Result<Self> {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "agents-manager-import-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path)?;
-        Ok(Self { path })
+        let dir = tempfile::Builder::new()
+            .prefix("agents-manager-import-")
+            .tempdir()?;
+        Ok(Self { dir })
     }
 
     fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TempCheckout {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        self.dir.path()
     }
 }
