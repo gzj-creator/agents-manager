@@ -163,6 +163,7 @@ test('createMemoryPageHtml renders memory list, client selector, and generate co
     memories: [{ stable_id: 7, id: 'team-default' }],
     selectedMemoryId: 7,
     client: 'claude',
+    force: true,
     command: '',
     selectedMemory: { stable_id: 7, id: 'team-default' }
   })
@@ -170,6 +171,7 @@ test('createMemoryPageHtml renders memory list, client selector, and generate co
   assert.match(html, /data-role="memory-list"/)
   assert.match(html, /data-role="memory-metadata-panel"/)
   assert.match(html, /data-role="memory-client"/)
+  assert.match(html, /data-role="memory-force"/)
   assert.match(html, /data-role="memory-generate-command"/)
   assert.match(html, /data-role="memory-selected-context"/)
   assert.match(html, /data-role="memory-create"/)
@@ -217,6 +219,8 @@ test('main.js wires memory command generation through the Tauri bridge', () => {
   const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
 
   assert.match(source, /generate_init_memory_command_cmd/)
+  assert.match(source, /memoryCommandForce:\s*false/)
+  assert.match(source, /force:\s*state\.memoryCommandForce/)
 })
 
 test('main.js tracks an active editor entry kind and stable id', () => {
@@ -410,6 +414,17 @@ test('main.js command copy handlers do not call syncAll after copying', () => {
     source,
     /async function copyGeneratedMemoryCommand\(\) \{[\s\S]*?await copyTextToClipboard\(state\.generatedMemoryCommand\)[\s\S]*?markMemoryCommandCopied\(\)[\s\S]*?\n\}/
   )
+})
+
+test('main.js sends force when generating init-project and init-memory commands', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /commandForce:\s*false/)
+  assert.match(source, /memoryCommandForce:\s*false/)
+  assert.match(source, /invoke\('generate_init_project_command_cmd',[\s\S]*force:\s*state\.commandForce/)
+  assert.match(source, /invoke\('generate_init_memory_command_cmd',[\s\S]*force:\s*state\.memoryCommandForce/)
+  assert.match(source, /event\.target\.id === 'commandForceToggle'/)
+  assert.match(source, /event\.target\.id === 'memoryCommandForceToggle'/)
 })
 
 test('nextActionState marks an action as loading with matching status copy', () => {
@@ -611,6 +626,7 @@ test('createSkillsPageHtml includes search, tag filter, and grouped result list'
     distributionSummary: '已勾选 1 个 skill',
     client: 'codex',
     mode: 'symlink',
+    force: true,
     command: 'codex init-project --skill demo',
     copyLabel: '已复制',
     copyState: 'copied',
@@ -628,6 +644,7 @@ test('createSkillsPageHtml includes search, tag filter, and grouped result list'
   assert.match(html, /data-role="open-editor"/)
   assert.match(html, /id="skillStableId">1</)
   assert.match(html, /data-role="sync-client"/)
+  assert.match(html, /data-role="sync-force"/)
   assert.match(html, /data-role="sync-command"/)
   assert.match(html, /data-skill-check="1"/)
   assert.match(html, /已勾选 1 个 skill/)

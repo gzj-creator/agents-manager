@@ -11,13 +11,14 @@ mod tests {
     use crate::{
         apply_to_project, bootstrap_legacy_migration, copy_paths_into_entry, create_memory,
         create_skill, delete_memory, delete_skill, doctor, generate_init_memory_command,
-        import_dropped_memory, import_dropped_skill, import_git_skills, init_memory, init_project,
-        load_managed_mcp_config, load_mcp_config, load_skill_registry, rename_memory, rename_skill,
-        save_managed_mcp_config, save_mcp_config, save_skill_registry, scan_memory_warehouse,
-        scan_warehouse, sync_global_skills, update_editable_settings, update_skill_metadata,
-        AppConfig, ApplySelections, ClientKind, ClientRoots, CoreError, CreateMemoryRequest,
-        CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest, InitMode, InstallMode,
-        McpServerConfig, McpTarget, Profile, RegistrySkill, SkillEntry, SkillRegistry,
+        generate_init_project_command, import_dropped_memory, import_dropped_skill,
+        import_git_skills, init_memory, init_project, load_managed_mcp_config, load_mcp_config,
+        load_skill_registry, rename_memory, rename_skill, save_managed_mcp_config, save_mcp_config,
+        save_skill_registry, scan_memory_warehouse, scan_warehouse, sync_global_skills,
+        update_editable_settings, update_skill_metadata, AppConfig, ApplySelections, ClientKind,
+        ClientRoots, CoreError, CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate,
+        GlobalSyncRequest, InitMode, InstallMode, McpServerConfig, McpTarget, Profile,
+        RegistrySkill, SkillEntry, SkillRegistry,
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -707,12 +708,33 @@ mod tests {
     }
 
     #[test]
+    fn generate_init_project_command_appends_force_flag_when_requested() {
+        let command =
+            generate_init_project_command(ClientKind::Codex, &[1, 2, 3], Some("copy"), true);
+
+        assert_eq!(
+            command,
+            "agents-manager init-project --client codex --skills 1,2,3 --mode copy --force"
+        );
+    }
+
+    #[test]
     fn generate_init_memory_command_uses_client_and_memory_id() {
-        let command = generate_init_memory_command(ClientKind::Claude, 12);
+        let command = generate_init_memory_command(ClientKind::Claude, 12, false);
 
         assert_eq!(
             command,
             "agents-manager init-memory --client claude --memory 12 --project ."
+        );
+    }
+
+    #[test]
+    fn generate_init_memory_command_appends_force_flag_when_requested() {
+        let command = generate_init_memory_command(ClientKind::Claude, 12, true);
+
+        assert_eq!(
+            command,
+            "agents-manager init-memory --client claude --memory 12 --project . --force"
         );
     }
 
@@ -1209,7 +1231,7 @@ mod tests {
     }
 
     #[test]
-    fn init_project_creates_codex_dir_and_agents_md() {
+    fn init_project_creates_codex_dir_without_memory_file() {
         let ctx = TestCtx::new();
         ctx.create_skill("alpha");
         let scan = scan_warehouse(&ctx.cfg).unwrap();
@@ -1220,12 +1242,13 @@ mod tests {
             ClientKind::Codex,
             vec![alpha.stable_id],
             InitMode::Symlink,
+            false,
             &ctx.cfg,
         )
         .unwrap();
 
         assert!(ctx.project.join(".codex").exists());
-        assert!(ctx.project.join("AGENTS.md").exists());
+        assert!(ctx.project.join("AGENTS.md").symlink_metadata().is_err());
         assert_eq!(report.invalid_skill_ids.len(), 0);
     }
 

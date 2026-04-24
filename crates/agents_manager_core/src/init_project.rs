@@ -27,6 +27,7 @@ pub fn init_project(
     client: ClientKind,
     skill_ids: Vec<u64>,
     mode: InitMode,
+    force: bool,
     cfg: &AppConfig,
 ) -> Result<InitProjectReport> {
     let project_root = fs::canonicalize(project_root)
@@ -36,14 +37,9 @@ pub fn init_project(
     }
 
     let entries = scan_warehouse(cfg)?;
-    let (skill_root, memory_file) = project_layout(client);
+    let skill_root = project_layout(client);
     let target_root = project_root.join(skill_root);
     fs::create_dir_all(&target_root)?;
-
-    let memory_path = project_root.join(memory_file);
-    if !memory_path.exists() {
-        fs::write(&memory_path, "")?;
-    }
 
     let mut report = InitProjectReport::default();
     for skill_id in skill_ids {
@@ -53,7 +49,7 @@ pub fn init_project(
         };
 
         let dest_dir = target_root.join(entry.path.file_name().unwrap_or_default());
-        install_dir(&entry.path, &dest_dir, mode)?;
+        install_dir(&entry.path, &dest_dir, mode, force)?;
         report.initialized_skill_ids.push(skill_id);
     }
 
@@ -64,6 +60,7 @@ pub fn generate_init_project_command(
     client: ClientKind,
     skill_ids: &[u64],
     mode: Option<&str>,
+    force: bool,
 ) -> String {
     let joined_ids = skill_ids
         .iter()
@@ -78,14 +75,17 @@ pub fn generate_init_project_command(
     if matches!(mode, Some("copy")) {
         command.push_str(" --mode copy");
     }
+    if force {
+        command.push_str(" --force");
+    }
     command
 }
 
-fn project_layout(client: ClientKind) -> (&'static str, &'static str) {
+fn project_layout(client: ClientKind) -> &'static str {
     match client {
-        ClientKind::Codex => (".codex/skills", "AGENTS.md"),
-        ClientKind::Claude => (".claude/skills", "CLAUDE.md"),
-        ClientKind::Cursor => (".cursor/skills", "AGENTS.md"),
+        ClientKind::Codex => ".codex/skills",
+        ClientKind::Claude => ".claude/skills",
+        ClientKind::Cursor => ".cursor/skills",
     }
 }
 
@@ -97,11 +97,14 @@ fn client_name(client: ClientKind) -> &'static str {
     }
 }
 
-fn install_dir(src: &Path, dest: &Path, mode: InitMode) -> Result<()> {
+fn install_dir(src: &Path, dest: &Path, mode: InitMode, force: bool) -> Result<()> {
     let src = fs::canonicalize(src)?;
+    if force && target_exists(dest) {
+        remove_existing_path(dest)?;
+    }
     match mode {
         InitMode::Symlink => {
-            if dest.exists() || dest.symlink_metadata().is_ok() {
+            if target_exists(dest) {
                 return Err(CoreError::DestConflict(dest.to_path_buf()));
             }
             #[cfg(unix)]
@@ -118,11 +121,26 @@ fn install_dir(src: &Path, dest: &Path, mode: InitMode) -> Result<()> {
             }
         }
         InitMode::Copy => {
-            if dest.exists() {
+            if target_exists(dest) {
                 return Err(CoreError::DestConflict(dest.to_path_buf()));
             }
             copy_dir_recursive(&src, dest)?;
         }
+    }
+    Ok(())
+}
+
+fn target_exists(path: &Path) -> bool {
+    path.exists() || path.symlink_metadata().is_ok()
+}
+
+fn remove_existing_path(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    let file_type = metadata.file_type();
+    if file_type.is_dir() && !file_type.is_symlink() {
+        fs::remove_dir_all(path)?;
+    } else {
+        fs::remove_file(path)?;
     }
     Ok(())
 }

@@ -166,51 +166,68 @@ pub fn init_memory(
     memory_id: u64,
     cfg: &AppConfig,
 ) -> Result<()> {
-    let project_root = fs::canonicalize(project_root)
-        .map_err(|_| CoreError::InvalidProject(project_root.to_path_buf()))?;
-    if !project_root.is_dir() {
-        return Err(CoreError::InvalidProject(project_root));
-    }
+    init_memory_with_overwrite(project_root, client, memory_id, false, cfg)
+}
 
-    let memory = scan_memory_warehouse(cfg)?
+pub fn init_memory_conflicts(
+    project_root: &Path,
+    client: ClientKind,
+    memory_id: u64,
+    cfg: &AppConfig,
+) -> Result<Vec<PathBuf>> {
+    let plan = resolve_init_memory_plan(project_root, client, memory_id, cfg)?;
+    Ok(plan
+        .target_paths()
         .into_iter()
-        .find(|entry| entry.stable_id == memory_id)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "memory not found"))?;
-    if let Some(parent) = memory.memory_md_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    if !memory.memory_md_path.exists() && memory.memory_md_path.symlink_metadata().is_err() {
-        fs::write(&memory.memory_md_path, "")?;
-    }
+        .filter(|path| path.exists() || path.symlink_metadata().is_ok())
+        .collect())
+}
 
-    let agents_path = project_root.join("AGENTS.md");
-    if agents_path.exists() || agents_path.symlink_metadata().is_ok() {
-        return Err(CoreError::DestConflict(agents_path));
-    }
+pub fn init_memory_with_overwrite(
+    project_root: &Path,
+    client: ClientKind,
+    memory_id: u64,
+    overwrite_existing: bool,
+    cfg: &AppConfig,
+) -> Result<()> {
+    let plan = resolve_init_memory_plan(project_root, client, memory_id, cfg)?;
+    let conflicts = plan
+        .target_paths()
+        .into_iter()
+        .filter(|path| path.exists() || path.symlink_metadata().is_ok())
+        .collect::<Vec<_>>();
 
-    let claude_alias = needs_claude_alias(client).then(|| project_root.join("CLAUDE.md"));
-    if let Some(alias_path) = &claude_alias {
-        if alias_path.exists() || alias_path.symlink_metadata().is_ok() {
-            return Err(CoreError::DestConflict(alias_path.clone()));
+    if !overwrite_existing {
+        if let Some(path) = conflicts.into_iter().next() {
+            return Err(CoreError::DestConflict(path));
+        }
+    } else {
+        for path in conflicts {
+            remove_existing_target(&path)?;
         }
     }
 
-    create_file_symlink(&memory.memory_md_path, &agents_path)?;
-    if let Some(alias_path) = claude_alias {
+    ensure_memory_file_exists(&plan.memory_md_path)?;
+    create_file_symlink(&plan.memory_md_path, &plan.agents_path)?;
+    if let Some(alias_path) = plan.claude_alias {
         if let Err(error) = create_file_symlink(Path::new("AGENTS.md"), &alias_path) {
-            let _ = fs::remove_file(&agents_path);
+            let _ = fs::remove_file(&plan.agents_path);
             return Err(error.into());
         }
     }
     Ok(())
 }
 
-pub fn generate_init_memory_command(client: ClientKind, memory_id: u64) -> String {
-    format!(
+pub fn generate_init_memory_command(client: ClientKind, memory_id: u64, force: bool) -> String {
+    let mut command = format!(
         "agents-manager init-memory --client {} --memory {} --project .",
         client_name(client),
         memory_id
-    )
+    );
+    if force {
+        command.push_str(" --force");
+    }
+    command
 }
 
 fn sanitize_memory_id(id: &str) -> Result<String> {
@@ -238,6 +255,22 @@ fn sanitize_memory_id(id: &str) -> Result<String> {
 enum DroppedMemorySource {
     Directory(PathBuf),
     MemoryFile(PathBuf),
+}
+
+struct InitMemoryPlan {
+    memory_md_path: PathBuf,
+    agents_path: PathBuf,
+    claude_alias: Option<PathBuf>,
+}
+
+impl InitMemoryPlan {
+    fn target_paths(&self) -> Vec<PathBuf> {
+        let mut paths = vec![self.agents_path.clone()];
+        if let Some(alias_path) = &self.claude_alias {
+            paths.push(alias_path.clone());
+        }
+        paths
+    }
 }
 
 impl DroppedMemorySource {
@@ -303,6 +336,51 @@ fn resolve_dropped_memory_source(source: &Path) -> Result<DroppedMemorySource> {
         "drop a memory directory, or a MEMORY.md/AGENTS.md/CLAUDE.md file",
     )
     .into())
+}
+
+fn resolve_init_memory_plan(
+    project_root: &Path,
+    client: ClientKind,
+    memory_id: u64,
+    cfg: &AppConfig,
+) -> Result<InitMemoryPlan> {
+    let project_root = fs::canonicalize(project_root)
+        .map_err(|_| CoreError::InvalidProject(project_root.to_path_buf()))?;
+    if !project_root.is_dir() {
+        return Err(CoreError::InvalidProject(project_root));
+    }
+
+    let memory = scan_memory_warehouse(cfg)?
+        .into_iter()
+        .find(|entry| entry.stable_id == memory_id)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "memory not found"))?;
+
+    Ok(InitMemoryPlan {
+        memory_md_path: memory.memory_md_path,
+        agents_path: project_root.join("AGENTS.md"),
+        claude_alias: needs_claude_alias(client).then(|| project_root.join("CLAUDE.md")),
+    })
+}
+
+fn ensure_memory_file_exists(memory_md_path: &Path) -> Result<()> {
+    if let Some(parent) = memory_md_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if !memory_md_path.exists() && memory_md_path.symlink_metadata().is_err() {
+        fs::write(memory_md_path, "")?;
+    }
+    Ok(())
+}
+
+fn remove_existing_target(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    let file_type = metadata.file_type();
+    if file_type.is_dir() && !file_type.is_symlink() {
+        fs::remove_dir_all(path)?;
+    } else {
+        fs::remove_file(path)?;
+    }
+    Ok(())
 }
 
 fn resolve_dropped_memory_file_source(source: &Path) -> Result<DroppedMemorySource> {

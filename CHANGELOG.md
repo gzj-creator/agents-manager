@@ -12,6 +12,21 @@
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-04-24
+
+### Added
+
+- CLI：`init-project` 与 `init-memory` 支持 `--force`，在目标已存在时覆盖写入；`init-memory` 在未指定 `--force` 且存在冲突时可在终端交互确认后覆盖。
+- 桌面端「生成 init-project / init-memory 命令」增加「强制覆盖」选项，与 CLI 的 `--force` 行为一致。
+
+### Changed
+
+- `init-project` 不再在项目根目录预写 `AGENTS.md` / `CLAUDE.md` 占位；memory 需通过 `init-memory` 单独落地（与 README 描述一致）。
+
+### Fixed
+
+- macOS 打包用 plist 单测从 `package.json` 读取版本，避免发版号与断言脱节。
+
 ## [v0.3.0] - 2026-04-22
 
 ### Added

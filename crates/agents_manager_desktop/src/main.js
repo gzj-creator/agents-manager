@@ -122,11 +122,13 @@ const state = {
   currentPage: 'skills',
   client: 'codex',
   installMode: 'symlink',
+  commandForce: false,
   generatedCommand: '',
   copyFeedback: 'idle',
   memories: [],
   selectedMemoryId: null,
   memoryClient: 'codex',
+  memoryCommandForce: false,
   generatedMemoryCommand: '',
   memoryCopyFeedback: 'idle',
   memoryDraft: createMemoryDraftState(),
@@ -931,6 +933,7 @@ function renderCurrentPage() {
       distributionSummary: distributionSummary(),
       client: state.client,
       mode: state.installMode,
+      force: state.commandForce,
       command: state.generatedCommand,
       copyLabel: copyFeedbackLabel(),
       copyState: state.copyFeedback,
@@ -998,6 +1001,7 @@ function renderCurrentPage() {
       selectedMemoryId: state.selectedMemoryId,
       selectedMemory: selectedMemory(),
       client: state.memoryClient,
+      force: state.memoryCommandForce,
       command: state.generatedMemoryCommand,
       copyLabel: memoryCopyFeedbackLabel(),
       copyState: state.memoryCopyFeedback,
@@ -2587,7 +2591,8 @@ async function generateCommand() {
     req: {
       client: state.client,
       skill_ids: skillIds,
-      mode: state.installMode
+      mode: state.installMode,
+      force: state.commandForce
     }
   })
   state.generatedCommand = command
@@ -2606,7 +2611,8 @@ async function generateMemoryCommand() {
   const command = await invoke('generate_init_memory_command_cmd', {
     req: {
       client: state.memoryClient,
-      memory: state.selectedMemoryId
+      memory: state.selectedMemoryId,
+      force: state.memoryCommandForce
     }
   })
   state.generatedMemoryCommand = command
@@ -2991,8 +2997,22 @@ function bindEvents() {
       return
     }
 
+    if (event.target.id === 'memoryCommandForceToggle') {
+      state.memoryCommandForce = event.target.checked
+      resetGeneratedMemoryCommand()
+      syncAll()
+      return
+    }
+
     if (event.target.id === 'modeSelect') {
       state.installMode = event.target.value
+      resetGeneratedCommand()
+      syncAll()
+      return
+    }
+
+    if (event.target.id === 'commandForceToggle') {
+      state.commandForce = event.target.checked
       resetGeneratedCommand()
       syncAll()
       return

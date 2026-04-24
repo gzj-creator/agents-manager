@@ -1205,6 +1205,12 @@ textarea:focus {
   gap: 12px;
 }
 
+.field-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .settings-root-list {
   display: grid;
   gap: 10px;

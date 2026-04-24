@@ -1,5 +1,17 @@
 # Release Notes
 
+## v0.4.0 - 2026-04-24
+
+- 版本级别：中版本
+- Git 提交消息：`feat: 拆分 init 与 memory 并支持 init 覆盖与生成命令强开关`
+- Git Tag：`v0.4.0`
+
+### 变更摘要
+
+- `init-project` 与 `init-memory` 支持 `--force` 覆盖已存在的目标；无 `--force` 时 `init-memory` 可在终端逐项确认后覆盖。核心层补齐 memory 初始化计划、冲突检测与安全删除逻辑。
+- `init-project` 不再随技能安装自动写入项目根目录的 memory/文档占位，memory 由 `init-memory` 独立管理，与 README 说明对齐。
+- 桌面端在生成 `init-project` / `init-memory` 命令时提供「强制覆盖」开关，并将 `force` 传入 Tauri 桥接。macOS 打包 plist 单测改为读取桌面 `package.json` 版本，避免与发版号不一致。
+
 ## v0.3.0 - 2026-04-22
 
 - 版本级别：中版本

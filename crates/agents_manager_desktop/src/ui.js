@@ -1309,6 +1309,7 @@ function renderSkillsMetadataPanelHtml(selectedSkill = null, {
   distributionSummary = '',
   client = 'codex',
   mode = 'symlink',
+  force = false,
   command = '',
   copyLabel = '复制',
   copyState = 'idle'
@@ -1380,6 +1381,13 @@ function renderSkillsMetadataPanelHtml(selectedSkill = null, {
             <option value="copy"${mode === 'copy' ? ' selected' : ''}>copy</option>
           </select>
         </label>
+        <label class="field" data-role="sync-force">
+          <span>生成选项</span>
+          <span class="field-toggle">
+            <input id="commandForceToggle" type="checkbox"${force ? ' checked' : ''} />
+            <span>强制覆盖</span>
+          </span>
+        </label>
         <div class="button-row">
           <button id="syncSkills" class="primary" type="button">同步到客户端</button>
           <button id="generateCommand" class="ghost" type="button">生成 init-project 命令</button>
@@ -1412,6 +1420,7 @@ export function createSkillsPageHtml({
   distributionSummary = '',
   client = 'codex',
   mode = 'symlink',
+  force = false,
   command = '',
   copyLabel = '复制',
   copyState = 'idle',
@@ -1489,6 +1498,7 @@ export function createSkillsPageHtml({
         distributionSummary,
         client,
         mode,
+        force,
         command,
         copyLabel,
         copyState
@@ -1522,6 +1532,7 @@ export function renderMemoryListHtml(memories = [], selectedMemoryId = null) {
 function renderMemoryMetadataPanelHtml(selectedMemory = null, {
   selectedContext = '',
   client = 'codex',
+  force = false,
   command = '',
   copyLabel = '复制',
   copyState = 'idle'
@@ -1570,6 +1581,13 @@ function renderMemoryMetadataPanelHtml(selectedMemory = null, {
             <option value="cursor"${client === 'cursor' ? ' selected' : ''}>Cursor</option>
           </select>
         </label>
+        <label class="field" data-role="memory-force">
+          <span>生成选项</span>
+          <span class="field-toggle">
+            <input id="memoryCommandForceToggle" type="checkbox"${force ? ' checked' : ''} />
+            <span>强制覆盖</span>
+          </span>
+        </label>
         <div class="button-row">
           <button id="generateMemoryCommand" class="ghost" type="button" data-role="memory-generate-command">生成 init-memory 命令</button>
         </div>
@@ -1601,6 +1619,7 @@ export function createMemoryPageHtml({
   memories = [],
   selectedMemoryId = null,
   client = 'codex',
+  force = false,
   command = '',
   copyLabel = '复制',
   copyState = 'idle',
@@ -1703,6 +1722,7 @@ export function createMemoryPageHtml({
       ${renderMemoryMetadataPanelHtml(selectedMemory, {
         selectedContext,
         client,
+        force,
         command,
         copyLabel,
         copyState

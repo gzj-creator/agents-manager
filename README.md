@@ -27,7 +27,9 @@ cargo run -p agents_manager_cli -- init-project \
 
 `migrate-legacy-skills` 会把 `~/.codex/skills` 和 `~/.claude/skills` 中的旧 skill 迁移进 warehouse。
 
-`init-project` 默认 `symlink`，可用 `--mode copy`。
+`init-project` 默认 `symlink`，可用 `--mode copy`；目标已存在时可加 `--force` 直接覆盖。
+
+`init-memory` 可把选中的 memory 写入项目；目标已存在时可加 `--force` 直接覆盖。
 
 旧的 `profile` / `apply` / `doctor` CLI 仍保留，但不再是主工作流。
 
@@ -71,13 +73,16 @@ agents-manager init-project --client codex --skills 1,2,3
 
 - 解析 warehouse 中的 stable ID
 - 创建目标项目下的客户端目录
-- 生成对应 memory file
 - 以 `symlink` 或 `copy` 方式写入选中的 skill
 
-memory file 规则：
+memory file 请使用单独的 `init-memory` 命令生成。
 
-- `codex` -> `AGENTS.md`
-- `claude` -> `CLAUDE.md`
+需要覆盖现有目标时：
+
+```bash
+agents-manager init-project --client codex --skills 1,2,3 --force
+agents-manager init-memory --client codex --memory 12 --project . --force
+```
 
 ## Profile 示例
 

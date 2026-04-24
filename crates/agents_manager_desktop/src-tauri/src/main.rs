@@ -110,6 +110,8 @@ struct InitCommandReq {
     client: String,
     skill_ids: Vec<u64>,
     mode: Option<String>,
+    #[serde(default)]
+    force: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -167,6 +169,8 @@ struct RenameMemoryReq {
 struct InitMemoryCommandReq {
     client: String,
     memory: u64,
+    #[serde(default)]
+    force: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -423,6 +427,7 @@ fn generate_init_project_command_cmd(req: InitCommandReq) -> Result<String, Stri
         parse_client(&req.client)?,
         &req.skill_ids,
         req.mode.as_deref(),
+        req.force,
     ))
 }
 
@@ -431,6 +436,7 @@ fn generate_init_memory_command_cmd(req: InitMemoryCommandReq) -> Result<String,
     Ok(generate_init_memory_command(
         parse_client(&req.client)?,
         req.memory,
+        req.force,
     ))
 }
 
