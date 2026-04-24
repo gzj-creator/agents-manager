@@ -41,7 +41,7 @@ import {
 } from './ui.js'
 
 test('createAppShellHtml includes desktop navigation and page shell', () => {
-  const html = createAppShellHtml()
+  const html = createAppShellHtml('v0.4.0')
 
   assert.match(html, /data-role="status"/)
   assert.match(html, /class="status-chip"/)
@@ -56,6 +56,8 @@ test('createAppShellHtml includes desktop navigation and page shell', () => {
   assert.match(html, /data-role="page-header"/)
   assert.match(html, /data-role="page-body"/)
   assert.match(html, /data-role="app-modal-root"/)
+  assert.match(html, /data-role="app-version"/)
+  assert.match(html, /v0\.4\.0/)
   assert.doesNotMatch(html, /class="brand-mark"/)
   assert.doesNotMatch(html, /id="selectedSkillSummary"/)
   assert.doesNotMatch(html, /id="pageEyebrow"/)
@@ -90,6 +92,9 @@ test('main shell page metadata uses compact titles with empty descriptions', () 
   assert.match(source, /memory:\s*\{[\s\S]*title:\s*'Memory'[\s\S]*description:\s*''/)
   assert.match(source, /mcp:\s*\{[\s\S]*title:\s*'MCP'[\s\S]*description:\s*''/)
   assert.match(source, /settings:\s*\{[\s\S]*title:\s*'Settings'[\s\S]*description:\s*''/)
+  assert.match(source, /appVersion:\s*''/)
+  assert.match(source, /invoke\('app_version_cmd'\)/)
+  assert.match(source, /createSettingsPageHtml\(\{[\s\S]*appVersion:\s*state\.appVersion/)
 })
 
 test('main.js wires inline tree path creation instead of prompt-based creation', () => {
@@ -1140,12 +1145,15 @@ test('renderTreeContextMenuHtml renders file actions without create entries', ()
 
 test('createSettingsPageHtml renders editable app settings only', () => {
   const html = createSettingsPageHtml({
+    appVersion: 'v0.4.0',
     skillWarehouse: '/tmp/warehouse',
     libraryRoots: ['/tmp/lib-a']
   })
 
   assert.match(html, /data-role="settings-warehouse"/)
   assert.match(html, /data-role="settings-library-roots"/)
+  assert.match(html, /data-role="settings-version"/)
+  assert.match(html, /当前版本：v0\.4\.0/)
   assert.doesNotMatch(html, /settings-migration/)
   assert.doesNotMatch(html, /settings-git-import/)
 })

@@ -130,6 +130,13 @@ textarea {
   gap: 6px;
 }
 
+.nav-version {
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+}
+
 .nav-link {
   width: 100%;
   border: 1px solid transparent;
@@ -1615,6 +1622,10 @@ textarea:focus {
 .settings-actions {
   margin-top: 14px;
   padding-top: 2px;
+}
+
+.settings-version {
+  margin-bottom: 6px;
 }
 
 .button-row.stacked {

@@ -136,6 +136,7 @@ const state = {
   memoryContextMenu: createMemoryContextMenuState(),
   memoryRename: createMemoryRenameState(),
   droppedSkillImportConfirm: createDroppedSkillImportConfirmState(),
+  appVersion: '',
   skillWarehouse: '',
   defaultSkillWarehouse: '',
   libraryRoots: [],
@@ -267,7 +268,7 @@ const PAGE_META = {
 }
 
 function renderBase() {
-  app.innerHTML = createAppShellHtml()
+  app.innerHTML = createAppShellHtml(state.appVersion)
 }
 
 function skillLabel(skill) {
@@ -1030,6 +1031,7 @@ function renderCurrentPage() {
 
   if (state.currentPage === 'settings') {
     pageBody.innerHTML = createSettingsPageHtml({
+      appVersion: state.appVersion,
       skillWarehouse: state.skillWarehouse,
       libraryRoots: state.libraryRoots
     })
@@ -1611,6 +1613,11 @@ function applyEditableSettingsPayload(payload) {
 async function loadEditableSettings() {
   const payload = await invoke('load_editable_settings_cmd')
   applyEditableSettingsPayload(payload)
+}
+
+async function loadAppVersion() {
+  const version = await invoke('app_version_cmd')
+  state.appVersion = version ? `v${version}` : ''
 }
 
 async function pickFolder(startPath = '') {
@@ -3932,7 +3939,8 @@ async function init() {
   await bindDropImport()
 
   await runAction('bootstrap', async () => {
-    await Promise.all([loadSkills(), loadMemories(), loadEditableSettings()])
+    await Promise.all([loadSkills(), loadMemories(), loadEditableSettings(), loadAppVersion()])
+    renderBase()
     syncAll()
   })
 }

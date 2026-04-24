@@ -1753,6 +1753,7 @@ function renderToolOutputHtml(output = null, dataRole = 'migration-output') {
 }
 
 export function createSettingsPageHtml({
+  appVersion = '',
   skillWarehouse = '',
   libraryRoots = []
 } = {}) {
@@ -1782,6 +1783,7 @@ export function createSettingsPageHtml({
             <h2>Skill Warehouse</h2>
           </div>
         </div>
+        <p class="sidebar-copy settings-version" data-role="settings-version">当前版本：${escapeHtml(appVersion || '-')}</p>
         <p class="sidebar-copy">维护桌面端使用的技能仓库路径。优先通过按钮选择，避免手动记目录结构。</p>
         <label class="field">
           <span>Warehouse Path</span>
@@ -2011,7 +2013,7 @@ export function createMcpPageHtml({
   `
 }
 
-export function createAppShellHtml() {
+export function createAppShellHtml(appVersion = '') {
   return `
     <main class="app-shell">
       <aside class="nav-rail" data-role="nav-rail">
@@ -2024,6 +2026,7 @@ export function createAppShellHtml() {
           <button class="nav-link" type="button" data-page-link="mcp">MCP</button>
           <button class="nav-link" type="button" data-page-link="settings">Settings</button>
         </nav>
+        <div class="nav-version" data-role="app-version">${escapeHtml(appVersion || '-')}</div>
       </aside>
 
       <section class="app-stage">

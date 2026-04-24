@@ -571,6 +571,11 @@ fn pick_folder_cmd(req: Option<PickFolderReq>) -> Result<Option<String>, String>
     Ok(dialog.pick_folder().map(|path| path.display().to_string()))
 }
 
+#[tauri::command]
+fn app_version_cmd(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(app.package_info().version.to_string())
+}
+
 fn parse_client(client: &str) -> Result<ClientKind, String> {
     match client {
         "codex" => Ok(ClientKind::Codex),
@@ -790,7 +795,8 @@ fn main() {
             save_editable_settings_cmd,
             load_mcp_config_cmd,
             save_mcp_config_cmd,
-            pick_folder_cmd
+            pick_folder_cmd,
+            app_version_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
