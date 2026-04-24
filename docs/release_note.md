@@ -1,5 +1,16 @@
 # Release Notes
 
+## v0.4.2 - 2026-04-24
+
+- 版本级别：小版本
+- Git 提交消息：`fix: 修复 memory 强制覆盖命令未携带 force`
+- Git Tag：`v0.4.2`
+
+### 变更摘要
+
+- 修复 Memory 页面中“强制覆盖”已勾选但生成命令缺失 `--force` 的问题；生成时改为优先读取复选框实时状态，避免状态不同步导致参数丢失。
+- 补充对应前端测试断言，覆盖 `memoryCommandForceToggle` 到 `generate_init_memory_command_cmd` 的 force 参数传递链路。
+
 ## v0.4.1 - 2026-04-24
 
 - 版本级别：小版本

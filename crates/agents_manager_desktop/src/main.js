@@ -2615,11 +2615,15 @@ async function generateMemoryCommand() {
     throw new Error('请先选择一个 memory')
   }
 
+  const forceToggle = document.getElementById('memoryCommandForceToggle')
+  const force = forceToggle ? !!forceToggle.checked : !!state.memoryCommandForce
+  state.memoryCommandForce = force
+
   const command = await invoke('generate_init_memory_command_cmd', {
     req: {
       client: state.memoryClient,
       memory: state.selectedMemoryId,
-      force: state.memoryCommandForce
+      force
     }
   })
   state.generatedMemoryCommand = command
