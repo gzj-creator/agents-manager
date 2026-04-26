@@ -1198,6 +1198,12 @@ test('createMcpPageHtml renders agent scope server list and editor surface', () 
   assert.doesNotMatch(html, /Server Editor/)
 })
 
+test('styles keep MCP sidebar bulk actions on an auto-sized row above the server list', () => {
+  const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.match(css, /\.mcp-server-section\s*\{[\s\S]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\)/)
+})
+
 test('main.js tracks checked MCP servers and bulk enable disable actions', () => {
   const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
 

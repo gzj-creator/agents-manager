@@ -7,6 +7,24 @@
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module">
+      import('./src/main.js').catch((error) => {
+        const pre = document.createElement('pre')
+        pre.style.whiteSpace = 'pre-wrap'
+        pre.style.padding = '16px'
+        pre.style.margin = '0'
+        pre.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace'
+        pre.style.fontSize = '12px'
+        pre.style.lineHeight = '1.5'
+        pre.style.color = '#b42318'
+        pre.textContent = [
+          '应用启动失败（main.js 加载异常）',
+          '',
+          String(error?.stack || error?.message || error)
+        ].join('\n')
+        document.body.innerHTML = ''
+        document.body.appendChild(pre)
+      })
+    </script>
   </body>
 </html>
