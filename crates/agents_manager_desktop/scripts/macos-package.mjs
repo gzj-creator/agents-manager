@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  chmod,
+  cp,
   copyFile,
   mkdir,
   mkdtemp,
@@ -105,10 +105,11 @@ export function createComponentPlist({
 `
 }
 
-function run(command, args, { cwd = repoRoot } = {}) {
+function run(command, args, { cwd = repoRoot, env = process.env } = {}) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
+    env,
     stdio: 'pipe',
   })
 
@@ -120,6 +121,60 @@ function run(command, args, { cwd = repoRoot } = {}) {
 
 async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, 'utf8'))
+}
+
+export function createTauriBuildEnv(env = process.env) {
+  const next = { ...env }
+
+  if (next.CI === '1') {
+    next.CI = 'true'
+  } else if (next.CI === '0') {
+    next.CI = 'false'
+  }
+
+  return next
+}
+
+export function createTauriBuildCommand() {
+  return {
+    command: 'npm',
+    args: ['run', 'tauri:build', '--', '--bundles', 'app'],
+  }
+}
+
+export function createMacosPackagePaths({
+  repoRoot,
+  cargoTargetDir = path.join(repoRoot, 'target'),
+  stagingDir,
+  productName,
+  version,
+}) {
+  const stableOutputDir = path.join(repoRoot, 'target', 'release', 'stable-macos')
+  const packagePath = path.join(stableOutputDir, 'agents-manager.pkg')
+  const versionedPackagePath = path.join(
+    stableOutputDir,
+    `agents-manager-v${version}-macos.pkg`,
+  )
+  const stageRoot = path.join(stagingDir, 'root')
+  const applicationsDir = path.join(stageRoot, 'Applications')
+  const stagedAppBundlePath = path.join(applicationsDir, `${productName}.app`)
+  const tauriBundleAppPath = path.join(
+    cargoTargetDir,
+    'release',
+    'bundle',
+    'macos',
+    `${productName}.app`,
+  )
+
+  return {
+    stableOutputDir,
+    packagePath,
+    versionedPackagePath,
+    stageRoot,
+    applicationsDir,
+    stagedAppBundlePath,
+    tauriBundleAppPath,
+  }
 }
 
 export async function buildMacosPackage() {
@@ -134,40 +189,24 @@ export async function buildMacosPackage() {
   const productName = tauriConfig.productName
   const bundleIdentifier = tauriConfig.identifier
 
-  const binaryPath = path.join(repoRoot, 'target', 'release', EXECUTABLE_NAME)
-  const iconPath = path.join(projectDir, 'src-tauri', 'icons', APP_ICON_NAME)
-  const stableOutputDir = path.join(repoRoot, 'target', 'release', 'stable-macos')
-  const packagePath = path.join(stableOutputDir, 'agents-manager.pkg')
-  const versionedPackagePath = path.join(
-    stableOutputDir,
-    `agents-manager-v${version}-macos.pkg`,
-  )
-
-  run('npm', ['run', 'build'], { cwd: projectDir })
-  run('cargo', ['build', '--release', '--manifest-path', 'crates/agents_manager_desktop/src-tauri/Cargo.toml'])
+  const buildEnv = createTauriBuildEnv()
+  const tauriBuild = createTauriBuildCommand()
+  run(tauriBuild.command, tauriBuild.args, { cwd: projectDir, env: buildEnv })
 
   const stagingDir = await mkdtemp(path.join(os.tmpdir(), 'agents-manager-macos-package-'))
+  const paths = createMacosPackagePaths({
+    repoRoot,
+    cargoTargetDir: buildEnv.CARGO_TARGET_DIR,
+    stagingDir,
+    productName,
+    version,
+  })
 
   try {
-    const stageRoot = path.join(stagingDir, 'root')
-    const appBundlePath = path.join(stageRoot, 'Applications', `${productName}.app`)
-    const contentsDir = path.join(appBundlePath, 'Contents')
-    const macosDir = path.join(contentsDir, 'MacOS')
-    const resourcesDir = path.join(contentsDir, 'Resources')
     const componentPlistPath = path.join(stagingDir, 'component.plist')
 
-    await mkdir(macosDir, { recursive: true })
-    await mkdir(resourcesDir, { recursive: true })
-
-    const stagedBinaryPath = path.join(macosDir, EXECUTABLE_NAME)
-    await copyFile(binaryPath, stagedBinaryPath)
-    await chmod(stagedBinaryPath, 0o755)
-    await copyFile(iconPath, path.join(resourcesDir, APP_ICON_NAME))
-    await writeFile(
-      path.join(contentsDir, 'Info.plist'),
-      createAppInfoPlist({ version, bundleIdentifier, productName }),
-      'utf8',
-    )
+    await mkdir(paths.applicationsDir, { recursive: true })
+    await cp(paths.tauriBundleAppPath, paths.stagedAppBundlePath, { recursive: true })
     await writeFile(
       componentPlistPath,
       createComponentPlist({
@@ -176,15 +215,15 @@ export async function buildMacosPackage() {
       'utf8',
     )
 
-    run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', appBundlePath])
+    run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', paths.stagedAppBundlePath])
 
-    await mkdir(stableOutputDir, { recursive: true })
-    await rm(packagePath, { force: true })
-    await rm(versionedPackagePath, { force: true })
+    await mkdir(paths.stableOutputDir, { recursive: true })
+    await rm(paths.packagePath, { force: true })
+    await rm(paths.versionedPackagePath, { force: true })
 
     run('/usr/bin/pkgbuild', [
       '--root',
-      stageRoot,
+      paths.stageRoot,
       '--install-location',
       '/',
       '--component-plist',
@@ -193,14 +232,14 @@ export async function buildMacosPackage() {
       bundleIdentifier,
       '--version',
       version,
-      packagePath,
+      paths.packagePath,
     ])
 
-    await copyFile(packagePath, versionedPackagePath)
+    await copyFile(paths.packagePath, paths.versionedPackagePath)
 
     return {
-      packagePath,
-      versionedPackagePath,
+      packagePath: paths.packagePath,
+      versionedPackagePath: paths.versionedPackagePath,
       version,
     }
   } finally {
