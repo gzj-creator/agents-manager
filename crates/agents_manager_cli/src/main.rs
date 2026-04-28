@@ -583,19 +583,14 @@ mod tests {
         let mut output = Vec::new();
         execute_command(cli.command, &mut output).unwrap();
 
-        let agents = project.join("AGENTS.md");
         let claude = project.join("CLAUDE.md");
 
-        assert!(fs::symlink_metadata(&agents)
-            .unwrap()
-            .file_type()
-            .is_symlink());
         assert!(fs::symlink_metadata(&claude)
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(fs::read_link(&agents).unwrap(), memory.memory_md_path);
-        assert_eq!(fs::read_link(&claude).unwrap(), PathBuf::from("AGENTS.md"));
+        assert!(project.join("AGENTS.md").symlink_metadata().is_err());
+        assert_eq!(fs::read_link(&claude).unwrap(), memory.memory_md_path);
         assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
         assert_eq!(
             String::from_utf8(output).unwrap(),
@@ -652,23 +647,19 @@ mod tests {
         ])
         .unwrap();
 
-        let mut input = Cursor::new(b"y\ny\n");
+        let mut input = Cursor::new(b"y\n");
         let mut output = Vec::new();
         execute_command_with_input(cli.command, &mut input, &mut output).unwrap();
 
         let agents = project.join("AGENTS.md");
         let claude = project.join("CLAUDE.md");
 
-        assert!(fs::symlink_metadata(&agents)
-            .unwrap()
-            .file_type()
-            .is_symlink());
         assert!(fs::symlink_metadata(&claude)
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(fs::read_link(&agents).unwrap(), memory.memory_md_path);
-        assert_eq!(fs::read_link(&claude).unwrap(), PathBuf::from("AGENTS.md"));
+        assert_eq!(fs::read_to_string(&agents).unwrap(), "old agents");
+        assert_eq!(fs::read_link(&claude).unwrap(), memory.memory_md_path);
         assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
     }
 
@@ -728,16 +719,12 @@ mod tests {
         let agents = project.join("AGENTS.md");
         let claude = project.join("CLAUDE.md");
 
-        assert!(fs::symlink_metadata(&agents)
-            .unwrap()
-            .file_type()
-            .is_symlink());
         assert!(fs::symlink_metadata(&claude)
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(fs::read_link(&agents).unwrap(), memory.memory_md_path);
-        assert_eq!(fs::read_link(&claude).unwrap(), PathBuf::from("AGENTS.md"));
+        assert_eq!(fs::read_to_string(&agents).unwrap(), "old agents");
+        assert_eq!(fs::read_link(&claude).unwrap(), memory.memory_md_path);
         assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
     }
 

@@ -661,7 +661,7 @@ mod tests {
     }
 
     #[test]
-    fn import_dropped_memory_accepts_agents_symlink_and_reuses_existing_memory() {
+    fn import_dropped_memory_accepts_client_symlink_and_reuses_existing_memory() {
         let ctx = TestCtx::new();
         let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
         fs::write(&created.memory_md_path, "remember this").unwrap();
@@ -674,7 +674,7 @@ mod tests {
         )
         .unwrap();
 
-        let imported = import_dropped_memory(&ctx.cfg, &ctx.project.join("AGENTS.md")).unwrap();
+        let imported = import_dropped_memory(&ctx.cfg, &ctx.project.join("CLAUDE.md")).unwrap();
 
         assert_eq!(imported.stable_id, created.stable_id);
         assert_eq!(imported.id, created.id);
@@ -820,19 +820,14 @@ mod tests {
         )
         .unwrap();
 
-        let agents = ctx.project.join("AGENTS.md");
         let claude = ctx.project.join("CLAUDE.md");
 
-        assert!(fs::symlink_metadata(&agents)
-            .unwrap()
-            .file_type()
-            .is_symlink());
         assert!(fs::symlink_metadata(&claude)
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(fs::read_link(&agents).unwrap(), created.memory_md_path);
-        assert_eq!(fs::read_link(&claude).unwrap(), PathBuf::from("AGENTS.md"));
+        assert!(ctx.project.join("AGENTS.md").symlink_metadata().is_err());
+        assert_eq!(fs::read_link(&claude).unwrap(), created.memory_md_path);
         assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
     }
 
@@ -855,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn init_memory_for_cursor_creates_claude_alias_to_agents() {
+    fn init_memory_for_cursor_writes_claude_target_directly() {
         let ctx = TestCtx::new();
         let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
         fs::write(created.memory_md_path.clone(), "remember this").unwrap();
@@ -868,23 +863,18 @@ mod tests {
         )
         .unwrap();
 
-        let agents = ctx.project.join("AGENTS.md");
         let claude = ctx.project.join("CLAUDE.md");
 
-        assert!(fs::symlink_metadata(&agents)
-            .unwrap()
-            .file_type()
-            .is_symlink());
         assert!(fs::symlink_metadata(&claude)
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(fs::read_link(&agents).unwrap(), created.memory_md_path);
-        assert_eq!(fs::read_link(&claude).unwrap(), PathBuf::from("AGENTS.md"));
+        assert!(ctx.project.join("AGENTS.md").symlink_metadata().is_err());
+        assert_eq!(fs::read_link(&claude).unwrap(), created.memory_md_path);
     }
 
     #[test]
-    fn init_memory_rejects_existing_claude_alias_target() {
+    fn init_memory_rejects_existing_claude_target() {
         let ctx = TestCtx::new();
         let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
         fs::write(created.memory_md_path.clone(), "remember this").unwrap();

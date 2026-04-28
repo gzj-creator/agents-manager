@@ -208,13 +208,7 @@ pub fn init_memory_with_overwrite(
     }
 
     ensure_memory_file_exists(&plan.memory_md_path)?;
-    create_file_symlink(&plan.memory_md_path, &plan.agents_path)?;
-    if let Some(alias_path) = plan.claude_alias {
-        if let Err(error) = create_file_symlink(Path::new("AGENTS.md"), &alias_path) {
-            let _ = fs::remove_file(&plan.agents_path);
-            return Err(error.into());
-        }
-    }
+    create_file_symlink(&plan.memory_md_path, &plan.target_path)?;
     Ok(())
 }
 
@@ -259,17 +253,12 @@ enum DroppedMemorySource {
 
 struct InitMemoryPlan {
     memory_md_path: PathBuf,
-    agents_path: PathBuf,
-    claude_alias: Option<PathBuf>,
+    target_path: PathBuf,
 }
 
 impl InitMemoryPlan {
     fn target_paths(&self) -> Vec<PathBuf> {
-        let mut paths = vec![self.agents_path.clone()];
-        if let Some(alias_path) = &self.claude_alias {
-            paths.push(alias_path.clone());
-        }
-        paths
+        vec![self.target_path.clone()]
     }
 }
 
@@ -357,8 +346,7 @@ fn resolve_init_memory_plan(
 
     Ok(InitMemoryPlan {
         memory_md_path: memory.memory_md_path,
-        agents_path: project_root.join("AGENTS.md"),
-        claude_alias: needs_claude_alias(client).then(|| project_root.join("CLAUDE.md")),
+        target_path: project_root.join(init_memory_target_name(client)),
     })
 }
 
@@ -551,8 +539,11 @@ fn client_name(client: ClientKind) -> &'static str {
     }
 }
 
-fn needs_claude_alias(client: ClientKind) -> bool {
-    matches!(client, ClientKind::Claude | ClientKind::Cursor)
+fn init_memory_target_name(client: ClientKind) -> &'static str {
+    match client {
+        ClientKind::Codex => "AGENTS.md",
+        ClientKind::Claude | ClientKind::Cursor => "CLAUDE.md",
+    }
 }
 
 #[cfg(unix)]

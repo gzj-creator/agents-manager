@@ -15,6 +15,7 @@
 ### Fixed
 
 - 修复自定义 macOS pkg 脚本只打入裸 Tauri 二进制导致 GitHub Release 安装后白屏的问题；打包流程现在复用 `tauri build --bundles app` 产出的完整 `.app`，同时安装新版 `agents-manager` CLI 到 `/usr/local/bin`，并兼容 `CI=1/0` 与自定义 `CARGO_TARGET_DIR`。
+- 修正 `init-memory --client claude|cursor` 的目标文件语义：Claude/Cursor 现在直接管理 `CLAUDE.md`，不再通过 `AGENTS.md` 中转或覆盖既有 `AGENTS.md`。
 
 ## [v0.4.2] - 2026-04-26
 
