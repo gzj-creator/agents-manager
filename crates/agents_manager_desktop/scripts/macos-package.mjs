@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  chmod,
   cp,
   copyFile,
   mkdir,
@@ -142,6 +143,13 @@ export function createTauriBuildCommand() {
   }
 }
 
+export function createCliBuildCommand() {
+  return {
+    command: 'cargo',
+    args: ['build', '--release', '--package', 'agents_manager_cli'],
+  }
+}
+
 export function createMacosPackagePaths({
   repoRoot,
   cargoTargetDir = path.join(repoRoot, 'target'),
@@ -158,6 +166,9 @@ export function createMacosPackagePaths({
   const stageRoot = path.join(stagingDir, 'root')
   const applicationsDir = path.join(stageRoot, 'Applications')
   const stagedAppBundlePath = path.join(applicationsDir, `${productName}.app`)
+  const stagedCliDir = path.join(stageRoot, 'usr', 'local', 'bin')
+  const stagedCliBinaryPath = path.join(stagedCliDir, 'agents-manager')
+  const cliBinaryPath = path.join(cargoTargetDir, 'release', 'agents-manager')
   const tauriBundleAppPath = path.join(
     cargoTargetDir,
     'release',
@@ -173,6 +184,9 @@ export function createMacosPackagePaths({
     stageRoot,
     applicationsDir,
     stagedAppBundlePath,
+    stagedCliDir,
+    stagedCliBinaryPath,
+    cliBinaryPath,
     tauriBundleAppPath,
   }
 }
@@ -192,6 +206,8 @@ export async function buildMacosPackage() {
   const buildEnv = createTauriBuildEnv()
   const tauriBuild = createTauriBuildCommand()
   run(tauriBuild.command, tauriBuild.args, { cwd: projectDir, env: buildEnv })
+  const cliBuild = createCliBuildCommand()
+  run(cliBuild.command, cliBuild.args, { cwd: repoRoot, env: buildEnv })
 
   const stagingDir = await mkdtemp(path.join(os.tmpdir(), 'agents-manager-macos-package-'))
   const paths = createMacosPackagePaths({
@@ -207,6 +223,9 @@ export async function buildMacosPackage() {
 
     await mkdir(paths.applicationsDir, { recursive: true })
     await cp(paths.tauriBundleAppPath, paths.stagedAppBundlePath, { recursive: true })
+    await mkdir(paths.stagedCliDir, { recursive: true })
+    await copyFile(paths.cliBinaryPath, paths.stagedCliBinaryPath)
+    await chmod(paths.stagedCliBinaryPath, 0o755)
     await writeFile(
       componentPlistPath,
       createComponentPlist({

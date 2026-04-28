@@ -53,6 +53,8 @@ test('macOS package paths use the Tauri-built app bundle as pkg input', async ()
 
   assert.equal(paths.tauriBundleAppPath, '/repo/target/release/bundle/macos/agents-manager.app')
   assert.equal(paths.stagedAppBundlePath, '/tmp/stage/root/Applications/agents-manager.app')
+  assert.equal(paths.cliBinaryPath, '/repo/target/release/agents-manager')
+  assert.equal(paths.stagedCliBinaryPath, '/tmp/stage/root/usr/local/bin/agents-manager')
   assert.equal(paths.packagePath, '/repo/target/release/stable-macos/agents-manager.pkg')
   assert.equal(paths.versionedPackagePath, '/repo/target/release/stable-macos/agents-manager-v0.4.2-macos.pkg')
 })
@@ -69,7 +71,18 @@ test('macOS package paths respect a custom Cargo target directory', async () => 
   })
 
   assert.equal(paths.tauriBundleAppPath, '/custom-target/release/bundle/macos/agents-manager.app')
+  assert.equal(paths.cliBinaryPath, '/custom-target/release/agents-manager')
   assert.equal(paths.packagePath, '/repo/target/release/stable-macos/agents-manager.pkg')
+})
+
+test('CLI build command compiles the release agents-manager binary', async () => {
+  const macosPackage = await import('./macos-package.mjs')
+
+  assert.equal(typeof macosPackage.createCliBuildCommand, 'function')
+  assert.deepEqual(macosPackage.createCliBuildCommand(), {
+    command: 'cargo',
+    args: ['build', '--release', '--package', 'agents_manager_cli'],
+  })
 })
 
 test('tauri build environment normalizes CI values for the Tauri CLI', async () => {

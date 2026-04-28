@@ -14,7 +14,7 @@
 
 ### Fixed
 
-- 修复自定义 macOS pkg 脚本只打入裸 Tauri 二进制导致 GitHub Release 安装后白屏的问题；打包流程现在复用 `tauri build --bundles app` 产出的完整 `.app`，并兼容 `CI=1/0` 与自定义 `CARGO_TARGET_DIR`。
+- 修复自定义 macOS pkg 脚本只打入裸 Tauri 二进制导致 GitHub Release 安装后白屏的问题；打包流程现在复用 `tauri build --bundles app` 产出的完整 `.app`，同时安装新版 `agents-manager` CLI 到 `/usr/local/bin`，并兼容 `CI=1/0` 与自定义 `CARGO_TARGET_DIR`。
 
 ## [v0.4.2] - 2026-04-26
 
