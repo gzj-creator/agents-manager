@@ -2412,6 +2412,49 @@ async function importDroppedSkillFromPaths(paths = []) {
   await completeDroppedSkillImport(imported, conflict)
 }
 
+async function importDroppedPluginFromPaths(paths = []) {
+  let candidate = ''
+  let droppedPlugin = null
+  for (const path of prioritizeDroppedSkillImportPaths(paths)) {
+    try {
+      droppedPlugin = await invoke('preview_dropped_plugin_cmd', {
+        req: {
+          path
+        }
+      })
+      candidate = path
+      break
+    } catch (_error) {
+      // Try the next dropped path; plain Skill drops should fall through to the Skill importer.
+    }
+  }
+
+  if (!candidate || !droppedPlugin) {
+    return null
+  }
+
+  const imported = await invoke('import_dropped_plugin_cmd', {
+    req: {
+      path: candidate
+    }
+  })
+
+  print(
+    `已导入 Claude Plugin ${imported.id}：${droppedPlugin.command_count} commands，${droppedPlugin.agent_count} agents，${droppedPlugin.skill_count} skills。`,
+    'success'
+  )
+  return imported
+}
+
+async function importDroppedPluginOrSkillFromPaths(paths = []) {
+  const importedPlugin = await importDroppedPluginFromPaths(paths)
+  if (importedPlugin) {
+    return importedPlugin
+  }
+
+  return importDroppedSkillFromPaths(paths)
+}
+
 function shouldImportDroppedPathsAsMemory(paths = []) {
   return paths.some(path => /(?:^|[\\/])(MEMORY|AGENTS|CLAUDE)\.md$/i.test(path))
 }
@@ -2793,7 +2836,7 @@ async function bindDropImport() {
     }
 
     if (state.currentPage === 'skills') {
-      runAction('importDroppedSkill', () => importDroppedSkillFromPaths(event.payload.paths))
+      runAction('importDroppedSkill', () => importDroppedPluginOrSkillFromPaths(event.payload.paths))
       return
     }
 
@@ -2808,7 +2851,7 @@ async function bindDropImport() {
         return
       }
 
-      runAction('importDroppedSkill', () => importDroppedSkillFromPaths(event.payload.paths))
+      runAction('importDroppedSkill', () => importDroppedPluginOrSkillFromPaths(event.payload.paths))
     }
   })
 }

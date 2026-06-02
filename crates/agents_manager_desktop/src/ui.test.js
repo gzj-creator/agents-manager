@@ -282,6 +282,19 @@ test('main.js wires memory create and delete through the Tauri bridge', () => {
   assert.match(source, /delete_memory_cmd/)
 })
 
+test('tauri bridge registers plugin bundle commands', () => {
+  const source = readFileSync(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8')
+
+  assert.match(source, /fn preview_dropped_plugin_cmd\(/)
+  assert.match(source, /fn import_dropped_plugin_cmd\(/)
+  assert.match(source, /fn list_warehouse_plugins_cmd\(/)
+  assert.match(source, /fn init_claude_plugin_cmd\(/)
+  assert.match(source, /preview_dropped_plugin_cmd,/)
+  assert.match(source, /import_dropped_plugin_cmd,/)
+  assert.match(source, /list_warehouse_plugins_cmd,/)
+  assert.match(source, /init_claude_plugin_cmd,/)
+})
+
 test('main.js wires memory rename through an in-app modal and memory context menus', () => {
   const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
 
@@ -331,6 +344,32 @@ test('main.js previews dropped skills and confirms overwrite for a single same-n
   assert.match(source, /resolveDroppedSkillImportCollision\(state\.skills,\s*droppedSkill\)/)
   assert.match(source, /case 'confirm-overwrite':[\s\S]*openDroppedSkillImportConfirm\(conflict,\s*candidate\)/)
   assert.match(source, /overwrite_stable_id:\s*conflict\.targetSkillId/)
+})
+
+test('main.js imports dropped plugin bundles before falling back to skill import', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /async function importDroppedPluginFromPaths\(/)
+  assert.match(source, /invoke\('preview_dropped_plugin_cmd'/)
+  assert.match(source, /invoke\('import_dropped_plugin_cmd'/)
+  assert.match(source, /async function importDroppedPluginOrSkillFromPaths\(/)
+  assert.match(
+    source,
+    /await importDroppedPluginFromPaths\(paths\)[\s\S]{0,500}?return importDroppedSkillFromPaths\(paths\)/
+  )
+})
+
+test('main.js routes skills-page and editor-root drops through plugin-or-skill import', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(
+    source,
+    /state\.currentPage === 'skills'[\s\S]{0,240}?importDroppedPluginOrSkillFromPaths\(event\.payload\.paths\)/
+  )
+  assert.match(
+    source,
+    /state\.currentPage === 'editor'[\s\S]{0,700}?importDroppedPluginOrSkillFromPaths\(event\.payload\.paths\)/
+  )
 })
 
 test('main.js rejects dropped skills when the same name matches multiple warehouse skills', () => {

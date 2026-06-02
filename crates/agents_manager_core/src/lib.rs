@@ -11,6 +11,7 @@ mod library;
 mod mcp;
 mod memory;
 mod migration;
+mod plugins;
 mod profile;
 mod registry;
 mod settings;
@@ -43,6 +44,10 @@ pub use memory::{
     CreateMemoryRequest, MemoryEntry,
 };
 pub use migration::{bootstrap_legacy_migration, migrate_legacy_skills, MigrationReport};
+pub use plugins::{
+    import_dropped_plugin, init_claude_plugin, preview_dropped_plugin, scan_plugin_warehouse,
+    DroppedPluginPreview, PluginEntry, PluginInstallReport,
+};
 pub use profile::{list_profiles, load_profile, save_profile, Profile};
 pub use registry::{
     load_skill_registry, reconcile_registry, save_skill_registry, update_skill_metadata,

@@ -6,11 +6,12 @@ use std::path::{Component, Path, PathBuf};
 use agents_manager_core::{
     bootstrap_legacy_migration, copy_paths_into_entry, create_memory, create_skill, delete_memory,
     delete_skill, generate_init_memory_command, generate_init_project_command,
-    import_dropped_memory, import_dropped_skill, import_git_skills, load_app_config,
-    load_managed_mcp_config, migrate_legacy_skills, preview_dropped_skill, rename_memory,
-    rename_skill, save_app_config, save_managed_mcp_config, scan_memory_warehouse, scan_warehouse,
+    import_dropped_memory, import_dropped_plugin, import_dropped_skill, import_git_skills,
+    init_claude_plugin, load_app_config, load_managed_mcp_config, migrate_legacy_skills,
+    preview_dropped_plugin, preview_dropped_skill, rename_memory, rename_skill, save_app_config,
+    save_managed_mcp_config, scan_memory_warehouse, scan_plugin_warehouse, scan_warehouse,
     sync_global_skills, update_editable_settings, update_skill_metadata, ClientKind, ClientRoots,
-    CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest,
+    CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest, InitMode,
     InstallMode, McpServerConfig, McpTarget,
 };
 use rfd::FileDialog;
@@ -136,6 +137,25 @@ struct PreviewDroppedSkillReq {
 }
 
 #[derive(Debug, Deserialize)]
+struct ImportDroppedPluginReq {
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PreviewDroppedPluginReq {
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct InitClaudePluginReq {
+    project_path: String,
+    plugin_id: String,
+    mode: Option<String>,
+    #[serde(default)]
+    force: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct CopyDroppedPathsReq {
     stable_id: u64,
     relative_target_dir: String,
@@ -238,6 +258,13 @@ fn create_skill_cmd(req: CreateSkillReq) -> Result<serde_json::Value, String> {
 fn list_warehouse_memories_cmd() -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
     let entries = scan_memory_warehouse(&cfg).map_err(|e| e.to_string())?;
+    serde_json::to_value(entries).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_warehouse_plugins_cmd() -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let entries = scan_plugin_warehouse(&cfg).map_err(|e| e.to_string())?;
     serde_json::to_value(entries).map_err(|e| e.to_string())
 }
 
@@ -455,6 +482,33 @@ fn preview_dropped_skill_cmd(req: PreviewDroppedSkillReq) -> Result<serde_json::
 }
 
 #[tauri::command]
+fn preview_dropped_plugin_cmd(req: PreviewDroppedPluginReq) -> Result<serde_json::Value, String> {
+    let preview = preview_dropped_plugin(Path::new(&req.path)).map_err(|e| e.to_string())?;
+    serde_json::to_value(preview).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_dropped_plugin_cmd(req: ImportDroppedPluginReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let imported = import_dropped_plugin(&cfg, Path::new(&req.path)).map_err(|e| e.to_string())?;
+    serde_json::to_value(imported).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn init_claude_plugin_cmd(req: InitClaudePluginReq) -> Result<serde_json::Value, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let report = init_claude_plugin(
+        Path::new(&req.project_path),
+        &req.plugin_id,
+        parse_init_mode(req.mode.as_deref()),
+        req.force,
+        &cfg,
+    )
+    .map_err(|e| e.to_string())?;
+    serde_json::to_value(report).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn import_dropped_memory_cmd(req: ImportDroppedMemoryReq) -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
     let imported = import_dropped_memory(&cfg, Path::new(&req.path)).map_err(|e| e.to_string())?;
@@ -589,6 +643,13 @@ fn parse_mode(mode: Option<&str>) -> InstallMode {
     match mode {
         Some("copy") => InstallMode::Copy,
         _ => InstallMode::Symlink,
+    }
+}
+
+fn parse_init_mode(mode: Option<&str>) -> InitMode {
+    match mode {
+        Some("copy") => InitMode::Copy,
+        _ => InitMode::Symlink,
     }
 }
 
@@ -761,6 +822,7 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             list_warehouse_skills_cmd,
+            list_warehouse_plugins_cmd,
             create_skill_cmd,
             delete_skill_cmd,
             rename_skill_cmd,
@@ -784,6 +846,9 @@ fn main() {
             migrate_legacy_skills_cmd,
             preview_dropped_skill_cmd,
             import_dropped_skill_cmd,
+            preview_dropped_plugin_cmd,
+            import_dropped_plugin_cmd,
+            init_claude_plugin_cmd,
             import_dropped_memory_cmd,
             copy_paths_into_skill_cmd,
             copy_paths_into_memory_cmd,

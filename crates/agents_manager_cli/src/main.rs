@@ -465,12 +465,14 @@ mod tests {
         let project = tmp.path.join("project");
         let memory_warehouse = tmp.path.join("memories");
         let skill_warehouse = tmp.path.join("skills");
+        let plugin_warehouse = tmp.path.join("plugins");
 
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&config_dir).unwrap();
         fs::create_dir_all(&project).unwrap();
         fs::create_dir_all(&memory_warehouse).unwrap();
         fs::create_dir_all(&skill_warehouse).unwrap();
+        fs::create_dir_all(&plugin_warehouse).unwrap();
 
         let _home_guard = EnvVarGuard::set("HOME", &home);
         let _config_guard = EnvVarGuard::set("AGENTS_MANAGER_CONFIG_DIR", &config_dir);
@@ -478,6 +480,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse,
             memory_warehouse,
+            plugin_warehouse,
             registry_path: tmp.path.join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: Vec::new(),
@@ -542,12 +545,14 @@ mod tests {
         let project = tmp.path.join("project");
         let memory_warehouse = tmp.path.join("memories");
         let skill_warehouse = tmp.path.join("skills");
+        let plugin_warehouse = tmp.path.join("plugins");
 
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&config_dir).unwrap();
         fs::create_dir_all(&project).unwrap();
         fs::create_dir_all(&memory_warehouse).unwrap();
         fs::create_dir_all(&skill_warehouse).unwrap();
+        fs::create_dir_all(&plugin_warehouse).unwrap();
 
         let _home_guard = EnvVarGuard::set("HOME", &home);
         let _config_guard = EnvVarGuard::set("AGENTS_MANAGER_CONFIG_DIR", &config_dir);
@@ -555,6 +560,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse,
             memory_warehouse,
+            plugin_warehouse,
             registry_path: tmp.path.join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: Vec::new(),
@@ -607,12 +613,14 @@ mod tests {
         let project = tmp.path.join("project");
         let memory_warehouse = tmp.path.join("memories");
         let skill_warehouse = tmp.path.join("skills");
+        let plugin_warehouse = tmp.path.join("plugins");
 
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&config_dir).unwrap();
         fs::create_dir_all(&project).unwrap();
         fs::create_dir_all(&memory_warehouse).unwrap();
         fs::create_dir_all(&skill_warehouse).unwrap();
+        fs::create_dir_all(&plugin_warehouse).unwrap();
 
         let _home_guard = EnvVarGuard::set("HOME", &home);
         let _config_guard = EnvVarGuard::set("AGENTS_MANAGER_CONFIG_DIR", &config_dir);
@@ -620,6 +628,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse,
             memory_warehouse,
+            plugin_warehouse,
             registry_path: tmp.path.join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: Vec::new(),
@@ -672,12 +681,14 @@ mod tests {
         let project = tmp.path.join("project");
         let memory_warehouse = tmp.path.join("memories");
         let skill_warehouse = tmp.path.join("skills");
+        let plugin_warehouse = tmp.path.join("plugins");
 
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&config_dir).unwrap();
         fs::create_dir_all(&project).unwrap();
         fs::create_dir_all(&memory_warehouse).unwrap();
         fs::create_dir_all(&skill_warehouse).unwrap();
+        fs::create_dir_all(&plugin_warehouse).unwrap();
 
         let _home_guard = EnvVarGuard::set("HOME", &home);
         let _config_guard = EnvVarGuard::set("AGENTS_MANAGER_CONFIG_DIR", &config_dir);
@@ -685,6 +696,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse,
             memory_warehouse,
+            plugin_warehouse,
             registry_path: tmp.path.join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: Vec::new(),
@@ -737,12 +749,14 @@ mod tests {
         let project = tmp.path.join("project");
         let memory_warehouse = tmp.path.join("memories");
         let skill_warehouse = tmp.path.join("skills");
+        let plugin_warehouse = tmp.path.join("plugins");
 
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&config_dir).unwrap();
         fs::create_dir_all(&project).unwrap();
         fs::create_dir_all(&memory_warehouse).unwrap();
         fs::create_dir_all(&skill_warehouse).unwrap();
+        fs::create_dir_all(&plugin_warehouse).unwrap();
 
         let _home_guard = EnvVarGuard::set("HOME", &home);
         let _config_guard = EnvVarGuard::set("AGENTS_MANAGER_CONFIG_DIR", &config_dir);
@@ -750,6 +764,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse,
             memory_warehouse,
+            plugin_warehouse,
             registry_path: tmp.path.join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: Vec::new(),

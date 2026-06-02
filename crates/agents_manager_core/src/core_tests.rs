@@ -11,10 +11,11 @@ mod tests {
     use crate::{
         apply_to_project, bootstrap_legacy_migration, copy_paths_into_entry, create_memory,
         create_skill, delete_memory, delete_skill, doctor, generate_init_memory_command,
-        generate_init_project_command, import_dropped_memory, import_dropped_skill,
-        import_git_skills, init_memory, init_project, load_managed_mcp_config, load_mcp_config,
-        load_skill_registry, rename_memory, rename_skill, save_managed_mcp_config, save_mcp_config,
-        save_skill_registry, scan_memory_warehouse, scan_warehouse, sync_global_skills,
+        generate_init_project_command, import_dropped_memory, import_dropped_plugin,
+        import_dropped_skill, import_git_skills, init_claude_plugin, init_memory, init_project,
+        load_managed_mcp_config, load_mcp_config, load_skill_registry, preview_dropped_plugin,
+        rename_memory, rename_skill, save_managed_mcp_config, save_mcp_config, save_skill_registry,
+        scan_memory_warehouse, scan_plugin_warehouse, scan_warehouse, sync_global_skills,
         update_editable_settings, update_skill_metadata, AppConfig, ApplySelections, ClientKind,
         ClientRoots, CoreError, CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate,
         GlobalSyncRequest, InitMode, InstallMode, McpServerConfig, McpTarget, Profile,
@@ -59,16 +60,19 @@ mod tests {
             let tmp = tempdir().unwrap();
             let warehouse = tmp.path().join("warehouse");
             let memory_warehouse = tmp.path().join("memories");
+            let plugin_warehouse = tmp.path().join("plugins");
             let project = tmp.path().join("project");
             let home = tmp.path().join("home");
             fs::create_dir_all(&warehouse).unwrap();
             fs::create_dir_all(&memory_warehouse).unwrap();
+            fs::create_dir_all(&plugin_warehouse).unwrap();
             fs::create_dir_all(&project).unwrap();
             fs::create_dir_all(&home).unwrap();
             Self {
                 cfg: AppConfig {
                     skill_warehouse: warehouse,
                     memory_warehouse,
+                    plugin_warehouse,
                     registry_path: tmp.path().join("registry.toml"),
                     bootstrap_migration_done: false,
                     library_roots: Vec::new(),
@@ -128,6 +132,21 @@ mod tests {
         fs::write(d.join("notes.txt"), body).unwrap();
     }
 
+    fn setup_plugin_bundle(root: &std::path::Path) -> PathBuf {
+        let bundle = root.join("dropped").join("doc-garden");
+        fs::create_dir_all(bundle.join("commands")).unwrap();
+        fs::create_dir_all(bundle.join("agents")).unwrap();
+        fs::create_dir_all(bundle.join("skills").join("doc-gardening")).unwrap();
+        fs::write(bundle.join("commands").join("doc-garden.md"), "command").unwrap();
+        fs::write(bundle.join("agents").join("doc-gardener.md"), "agent").unwrap();
+        fs::write(
+            bundle.join("skills").join("doc-gardening").join("SKILL.md"),
+            "---\nname: doc-gardening\ndescription: garden docs\n---\nbody",
+        )
+        .unwrap();
+        bundle
+    }
+
     fn init_git_repo(path: &std::path::Path) {
         let status = Command::new("git")
             .args(["init"])
@@ -174,6 +193,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse: tmp.path().join("warehouse"),
             memory_warehouse: tmp.path().join("memories"),
+            plugin_warehouse: tmp.path().join("plugins"),
             registry_path: tmp.path().join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: vec![lib.clone()],
@@ -302,6 +322,7 @@ mod tests {
         let cfg = AppConfig {
             skill_warehouse: tmp.path().join("warehouse"),
             memory_warehouse: tmp.path().join("memories"),
+            plugin_warehouse: tmp.path().join("plugins"),
             registry_path: tmp.path().join("registry.toml"),
             bootstrap_migration_done: false,
             library_roots: vec![lib],
@@ -1025,6 +1046,158 @@ mod tests {
             )
             .unwrap(),
             "more"
+        );
+    }
+
+    #[test]
+    fn plugin_bundle_preview_counts_claude_resources() {
+        let ctx = TestCtx::new();
+        let dropped_root = setup_plugin_bundle(ctx.tmp.path());
+
+        let preview = preview_dropped_plugin(&dropped_root).unwrap();
+
+        assert_eq!(preview.id, "doc-garden");
+        assert_eq!(preview.command_count, 1);
+        assert_eq!(preview.agent_count, 1);
+        assert_eq!(preview.skill_count, 1);
+    }
+
+    #[test]
+    fn plugin_bundle_import_copies_bundle_into_plugin_warehouse() {
+        let ctx = TestCtx::new();
+        let dropped_root = setup_plugin_bundle(ctx.tmp.path());
+
+        let imported = import_dropped_plugin(&ctx.cfg, &dropped_root).unwrap();
+        let scanned = scan_plugin_warehouse(&ctx.cfg).unwrap();
+
+        assert_eq!(imported.id, "doc-garden");
+        assert!(ctx
+            .cfg
+            .plugin_warehouse
+            .join("doc-garden")
+            .join("commands")
+            .join("doc-garden.md")
+            .exists());
+        assert!(ctx
+            .cfg
+            .plugin_warehouse
+            .join("doc-garden")
+            .join("agents")
+            .join("doc-gardener.md")
+            .exists());
+        assert!(ctx
+            .cfg
+            .plugin_warehouse
+            .join("doc-garden")
+            .join("skills")
+            .join("doc-gardening")
+            .join("SKILL.md")
+            .exists());
+        assert!(scanned.iter().any(|entry| entry.id == "doc-garden"));
+    }
+
+    #[test]
+    fn plugin_bundle_import_rejects_directory_without_claude_resources() {
+        let ctx = TestCtx::new();
+        let dropped_root = ctx.tmp.path().join("dropped").join("not-a-plugin");
+        fs::create_dir_all(dropped_root.join("notes")).unwrap();
+        fs::write(dropped_root.join("README.md"), "notes").unwrap();
+
+        let error = import_dropped_plugin(&ctx.cfg, &dropped_root).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("drop a Claude plugin bundle directory"));
+    }
+
+    #[test]
+    fn plugin_bundle_init_copies_resources_into_claude_project_layout() {
+        let ctx = TestCtx::new();
+        let dropped_root = setup_plugin_bundle(ctx.tmp.path());
+        import_dropped_plugin(&ctx.cfg, &dropped_root).unwrap();
+
+        let report =
+            init_claude_plugin(&ctx.project, "doc-garden", InitMode::Copy, false, &ctx.cfg)
+                .unwrap();
+
+        assert_eq!(report.installed_commands, vec!["doc-garden.md"]);
+        assert_eq!(report.installed_agents, vec!["doc-gardener.md"]);
+        assert_eq!(report.installed_skills, vec!["doc-gardening"]);
+        assert_eq!(
+            fs::read_to_string(ctx.project.join(".claude/commands/doc-garden.md")).unwrap(),
+            "command"
+        );
+        assert_eq!(
+            fs::read_to_string(ctx.project.join(".claude/agents/doc-gardener.md")).unwrap(),
+            "agent"
+        );
+        assert_eq!(
+            fs::read_to_string(ctx.project.join(".claude/skills/doc-gardening/SKILL.md")).unwrap(),
+            "---\nname: doc-gardening\ndescription: garden docs\n---\nbody"
+        );
+    }
+
+    #[test]
+    fn plugin_bundle_init_symlinks_resources_into_claude_project_layout() {
+        let ctx = TestCtx::new();
+        let dropped_root = setup_plugin_bundle(ctx.tmp.path());
+        import_dropped_plugin(&ctx.cfg, &dropped_root).unwrap();
+
+        init_claude_plugin(
+            &ctx.project,
+            "doc-garden",
+            InitMode::Symlink,
+            false,
+            &ctx.cfg,
+        )
+        .unwrap();
+
+        assert!(
+            fs::symlink_metadata(ctx.project.join(".claude/commands/doc-garden.md"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            fs::symlink_metadata(ctx.project.join(".claude/agents/doc-gardener.md"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            fs::symlink_metadata(ctx.project.join(".claude/skills/doc-gardening"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[test]
+    fn plugin_bundle_init_rejects_existing_targets_unless_force_is_enabled() {
+        let ctx = TestCtx::new();
+        let dropped_root = setup_plugin_bundle(ctx.tmp.path());
+        import_dropped_plugin(&ctx.cfg, &dropped_root).unwrap();
+        fs::create_dir_all(ctx.project.join(".claude/commands")).unwrap();
+        fs::write(
+            ctx.project.join(".claude/commands/doc-garden.md"),
+            "existing",
+        )
+        .unwrap();
+
+        let error = init_claude_plugin(&ctx.project, "doc-garden", InitMode::Copy, false, &ctx.cfg)
+            .unwrap_err();
+
+        assert!(matches!(error, CoreError::DestConflict(_)));
+        assert_eq!(
+            fs::read_to_string(ctx.project.join(".claude/commands/doc-garden.md")).unwrap(),
+            "existing"
+        );
+
+        init_claude_plugin(&ctx.project, "doc-garden", InitMode::Copy, true, &ctx.cfg).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(ctx.project.join(".claude/commands/doc-garden.md")).unwrap(),
+            "command"
         );
     }
 

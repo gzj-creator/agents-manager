@@ -15,6 +15,8 @@ pub struct AppConfig {
     pub skill_warehouse: PathBuf,
     #[serde(default = "default_memory_warehouse")]
     pub memory_warehouse: PathBuf,
+    #[serde(default = "default_plugin_warehouse")]
+    pub plugin_warehouse: PathBuf,
     #[serde(default = "default_registry_path")]
     pub registry_path: PathBuf,
     #[serde(default)]
@@ -32,6 +34,7 @@ impl Default for AppConfig {
         Self {
             skill_warehouse: default_skill_warehouse(),
             memory_warehouse: default_memory_warehouse(),
+            plugin_warehouse: default_plugin_warehouse(),
             registry_path: default_registry_path(),
             bootstrap_migration_done: false,
             library_roots: Vec::new(),
@@ -53,6 +56,10 @@ fn default_skill_warehouse() -> PathBuf {
 
 fn default_memory_warehouse() -> PathBuf {
     app_home_dir().join("memories")
+}
+
+fn default_plugin_warehouse() -> PathBuf {
+    app_home_dir().join("plugins")
 }
 
 fn default_registry_path() -> PathBuf {
@@ -84,6 +91,7 @@ fn init_dirs() -> Result<()> {
     fs::create_dir_all(app_home_dir())?;
     fs::create_dir_all(default_skill_warehouse())?;
     fs::create_dir_all(default_memory_warehouse())?;
+    fs::create_dir_all(default_plugin_warehouse())?;
     Ok(())
 }
 
@@ -149,11 +157,15 @@ pub fn load_app_config() -> Result<AppConfig> {
     if cfg.memory_warehouse.as_os_str().is_empty() {
         cfg.memory_warehouse = default_memory_warehouse();
     }
+    if cfg.plugin_warehouse.as_os_str().is_empty() {
+        cfg.plugin_warehouse = default_plugin_warehouse();
+    }
     if cfg.registry_path.as_os_str().is_empty() {
         cfg.registry_path = default_registry_path();
     }
     fs::create_dir_all(&cfg.skill_warehouse)?;
     fs::create_dir_all(&cfg.memory_warehouse)?;
+    fs::create_dir_all(&cfg.plugin_warehouse)?;
     Ok(cfg)
 }
 
@@ -161,6 +173,7 @@ pub fn save_app_config(cfg: &AppConfig) -> Result<()> {
     init_dirs()?;
     fs::create_dir_all(&cfg.skill_warehouse)?;
     fs::create_dir_all(&cfg.memory_warehouse)?;
+    fs::create_dir_all(&cfg.plugin_warehouse)?;
     let path = config_file_path()?;
     let s = toml::to_string_pretty(cfg)?;
     fs::write(path, s)?;
