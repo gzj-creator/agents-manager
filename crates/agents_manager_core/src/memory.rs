@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
 use crate::error::{CoreError, Result};
+use crate::init_project::InitMode;
 use crate::targets::ClientKind;
 
 const MEMORY_MD_NAME: &str = "MEMORY.md";
@@ -166,7 +167,17 @@ pub fn init_memory(
     memory_id: u64,
     cfg: &AppConfig,
 ) -> Result<()> {
-    init_memory_with_overwrite(project_root, client, memory_id, false, cfg)
+    init_memory_with_mode(project_root, client, memory_id, InitMode::Symlink, cfg)
+}
+
+pub fn init_memory_with_mode(
+    project_root: &Path,
+    client: ClientKind,
+    memory_id: u64,
+    mode: InitMode,
+    cfg: &AppConfig,
+) -> Result<()> {
+    init_memory_with_overwrite_mode(project_root, client, memory_id, false, mode, cfg)
 }
 
 pub fn init_memory_conflicts(
@@ -190,6 +201,24 @@ pub fn init_memory_with_overwrite(
     overwrite_existing: bool,
     cfg: &AppConfig,
 ) -> Result<()> {
+    init_memory_with_overwrite_mode(
+        project_root,
+        client,
+        memory_id,
+        overwrite_existing,
+        InitMode::Symlink,
+        cfg,
+    )
+}
+
+pub fn init_memory_with_overwrite_mode(
+    project_root: &Path,
+    client: ClientKind,
+    memory_id: u64,
+    overwrite_existing: bool,
+    mode: InitMode,
+    cfg: &AppConfig,
+) -> Result<()> {
     let plan = resolve_init_memory_plan(project_root, client, memory_id, cfg)?;
     let conflicts = plan
         .target_paths()
@@ -208,16 +237,29 @@ pub fn init_memory_with_overwrite(
     }
 
     ensure_memory_file_exists(&plan.memory_md_path)?;
-    create_file_symlink(&plan.memory_md_path, &plan.target_path)?;
+    match mode {
+        InitMode::Symlink => create_file_symlink(&plan.memory_md_path, &plan.target_path)?,
+        InitMode::Copy => {
+            fs::copy(&plan.memory_md_path, &plan.target_path)?;
+        }
+    }
     Ok(())
 }
 
-pub fn generate_init_memory_command(client: ClientKind, memory_id: u64, force: bool) -> String {
+pub fn generate_init_memory_command(
+    client: ClientKind,
+    memory_id: u64,
+    mode: Option<&str>,
+    force: bool,
+) -> String {
     let mut command = format!(
         "agents-manager init-memory --client {} --memory {} --project .",
         client_name(client),
         memory_id
     );
+    if matches!(mode, Some("copy")) {
+        command.push_str(" --mode copy");
+    }
     if force {
         command.push_str(" --force");
     }

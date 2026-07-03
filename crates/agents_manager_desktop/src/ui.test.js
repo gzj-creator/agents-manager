@@ -168,6 +168,7 @@ test('createMemoryPageHtml renders memory list, client selector, and generate co
     memories: [{ stable_id: 7, id: 'team-default' }],
     selectedMemoryId: 7,
     client: 'claude',
+    mode: 'copy',
     force: true,
     command: '',
     selectedMemory: { stable_id: 7, id: 'team-default' }
@@ -176,6 +177,8 @@ test('createMemoryPageHtml renders memory list, client selector, and generate co
   assert.match(html, /data-role="memory-list"/)
   assert.match(html, /data-role="memory-metadata-panel"/)
   assert.match(html, /data-role="memory-client"/)
+  assert.match(html, /data-role="memory-mode"/)
+  assert.match(html, /<option value="copy" selected>copy<\/option>/)
   assert.match(html, /data-role="memory-force"/)
   assert.match(html, /data-role="memory-generate-command"/)
   assert.match(html, /data-role="memory-selected-context"/)
@@ -224,7 +227,9 @@ test('main.js wires memory command generation through the Tauri bridge', () => {
   const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
 
   assert.match(source, /generate_init_memory_command_cmd/)
+  assert.match(source, /memoryInstallMode:\s*'symlink'/)
   assert.match(source, /memoryCommandForce:\s*false/)
+  assert.match(source, /mode:\s*state\.memoryInstallMode/)
   assert.match(source, /force:\s*state\.memoryCommandForce/)
 })
 
@@ -466,10 +471,12 @@ test('main.js sends force when generating init-project and init-memory commands'
   assert.match(source, /commandForce:\s*false/)
   assert.match(source, /memoryCommandForce:\s*false/)
   assert.match(source, /invoke\('generate_init_project_command_cmd',[\s\S]*force:\s*state\.commandForce/)
+  assert.match(source, /invoke\('generate_init_memory_command_cmd',[\s\S]*mode:\s*state\.memoryInstallMode/)
   assert.match(source, /const forceToggle = document\.getElementById\('memoryCommandForceToggle'\)/)
   assert.match(source, /const force = forceToggle \? !!forceToggle\.checked : !!state\.memoryCommandForce/)
   assert.match(source, /invoke\('generate_init_memory_command_cmd',[\s\S]*force/)
   assert.match(source, /event\.target\.id === 'commandForceToggle'/)
+  assert.match(source, /event\.target\.id === 'memoryModeSelect'/)
   assert.match(source, /event\.target\.id === 'memoryCommandForceToggle'/)
 })
 

@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.5.0 - 2026-07-03
+
+- 版本级别：中版本
+- Git 提交消息：`feat: 支持 memory copy 模式并发布 v0.5.0`
+- Git Tag：`v0.5.0`
+
+### 变更摘要
+
+- 新增 Claude plugin bundle 导入与初始化能力，可管理 bundle 中的 commands、agents 与 skills，并在 CLI、Rust core、Tauri 桥接和桌面端工作流中打通。
+- `init-memory` 支持 `--mode copy`，可把选中 memory 的 `MEMORY.md` 内容复制成项目目标文件；桌面端 Memory 页面同步增加 symlink/copy 模式选择，并在生成命令时透传该模式。
+- 修复自定义 macOS pkg 脚本只打入裸 Tauri 二进制导致 GitHub Release 安装后白屏的问题；打包流程现在复用 `tauri build --bundles app` 产出的完整 `.app`，同时安装新版 `agents-manager` CLI 到 `/usr/local/bin`。
+- 修正 `init-memory --client claude|cursor` 的目标文件语义：Claude/Cursor 现在直接管理 `CLAUDE.md`，不再通过 `AGENTS.md` 中转或覆盖既有 `AGENTS.md`。
+- 补充 Claude plugin bundle 设计文档，并更新 README 中 `init-memory --mode copy` 的使用说明。
+
 ## v0.4.2 - 2026-04-24
 
 - 版本级别：小版本

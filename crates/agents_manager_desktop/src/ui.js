@@ -1532,6 +1532,7 @@ export function renderMemoryListHtml(memories = [], selectedMemoryId = null) {
 function renderMemoryMetadataPanelHtml(selectedMemory = null, {
   selectedContext = '',
   client = 'codex',
+  mode = 'symlink',
   force = false,
   command = '',
   copyLabel = '复制',
@@ -1581,6 +1582,13 @@ function renderMemoryMetadataPanelHtml(selectedMemory = null, {
             <option value="cursor"${client === 'cursor' ? ' selected' : ''}>Cursor</option>
           </select>
         </label>
+        <label class="field">
+          <span>同步模式</span>
+          <select id="memoryModeSelect" data-role="memory-mode">
+            <option value="symlink"${mode === 'symlink' ? ' selected' : ''}>symlink</option>
+            <option value="copy"${mode === 'copy' ? ' selected' : ''}>copy</option>
+          </select>
+        </label>
         <label class="field" data-role="memory-force">
           <span>生成选项</span>
           <span class="field-toggle">
@@ -1619,6 +1627,7 @@ export function createMemoryPageHtml({
   memories = [],
   selectedMemoryId = null,
   client = 'codex',
+  mode = 'symlink',
   force = false,
   command = '',
   copyLabel = '复制',
@@ -1722,6 +1731,7 @@ export function createMemoryPageHtml({
       ${renderMemoryMetadataPanelHtml(selectedMemory, {
         selectedContext,
         client,
+        mode,
         force,
         command,
         copyLabel,

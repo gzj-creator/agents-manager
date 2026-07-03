@@ -2,8 +2,8 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use agents_manager_core::{
-    apply_to_project, doctor, init_config_tree, init_memory, init_memory_conflicts,
-    init_memory_with_overwrite, init_project, list_profiles, load_app_config, load_profile,
+    apply_to_project, doctor, init_config_tree, init_memory_conflicts, init_memory_with_mode,
+    init_memory_with_overwrite_mode, init_project, list_profiles, load_app_config, load_profile,
     migrate_legacy_skills, save_app_config, save_profile, scan_warehouse, AppConfig,
     ApplySelections, ClientKind, ClientRoots, InitMode, InstallMode, Profile,
 };
@@ -70,6 +70,8 @@ enum Commands {
         client: String,
         #[arg(long)]
         memory: u64,
+        #[arg(long, default_value = "symlink")]
+        mode: String,
         #[arg(long)]
         force: bool,
     },
@@ -258,16 +260,18 @@ fn execute_command_with_input<R: BufRead, W: Write>(
             project,
             client,
             memory,
+            mode,
             force,
         } => {
             let cfg = load_app_config()?;
             let client = parse_client(&client)?;
+            let mode = parse_init_mode(&mode);
             if force {
-                init_memory_with_overwrite(&project, client, memory, true, &cfg)?;
+                init_memory_with_overwrite_mode(&project, client, memory, true, mode, &cfg)?;
             } else {
                 let conflicts = init_memory_conflicts(&project, client, memory, &cfg)?;
                 if conflicts.is_empty() {
-                    init_memory(&project, client, memory, &cfg)?;
+                    init_memory_with_mode(&project, client, memory, mode, &cfg)?;
                 } else {
                     for conflict in &conflicts {
                         if !confirm_overwrite(conflict, input, out)? {
@@ -277,7 +281,7 @@ fn execute_command_with_input<R: BufRead, W: Write>(
                             .into());
                         }
                     }
-                    init_memory_with_overwrite(&project, client, memory, true, &cfg)?;
+                    init_memory_with_overwrite_mode(&project, client, memory, true, mode, &cfg)?;
                 }
             }
             writeln!(out, "{}", init_memory_success_output())?;
@@ -445,13 +449,35 @@ mod tests {
                 project,
                 client,
                 memory,
+                mode,
                 force,
             } => {
                 assert_eq!(project, PathBuf::from("."));
                 assert_eq!(client, "claude");
                 assert_eq!(memory, 12);
+                assert_eq!(mode, "symlink");
                 assert!(!force);
             }
+            _ => panic!("expected init-memory command"),
+        }
+    }
+
+    #[test]
+    fn init_memory_cli_parses_copy_mode() {
+        let cli = Cli::try_parse_from([
+            "agents-manager",
+            "init-memory",
+            "--client",
+            "claude",
+            "--memory",
+            "12",
+            "--mode",
+            "copy",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::InitMemory { mode, .. } => assert_eq!(mode, "copy"),
             _ => panic!("expected init-memory command"),
         }
     }
@@ -602,6 +628,70 @@ mod tests {
             String::from_utf8(output).unwrap(),
             format!("{}\n", init_memory_success_output())
         );
+    }
+
+    #[test]
+    fn init_memory_command_can_copy_memory_file() {
+        let _env_lock = ENV_LOCK.lock().unwrap();
+        let tmp = TestDir::new();
+        let home = tmp.path.join("home");
+        let config_dir = tmp.path.join("config");
+        let project = tmp.path.join("project");
+        let memory_warehouse = tmp.path.join("memories");
+        let skill_warehouse = tmp.path.join("skills");
+        let plugin_warehouse = tmp.path.join("plugins");
+
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&memory_warehouse).unwrap();
+        fs::create_dir_all(&skill_warehouse).unwrap();
+        fs::create_dir_all(&plugin_warehouse).unwrap();
+
+        let _home_guard = EnvVarGuard::set("HOME", &home);
+        let _config_guard = EnvVarGuard::set("AGENTS_MANAGER_CONFIG_DIR", &config_dir);
+
+        let cfg = AppConfig {
+            skill_warehouse,
+            memory_warehouse,
+            plugin_warehouse,
+            registry_path: tmp.path.join("registry.toml"),
+            bootstrap_migration_done: false,
+            library_roots: Vec::new(),
+            default_profile: Some("claude".into()),
+            mcp_disabled_servers: Default::default(),
+        };
+        save_app_config(&cfg).unwrap();
+
+        let memory = create_memory(&cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        fs::write(&memory.memory_md_path, "remember this").unwrap();
+
+        let memory_arg = memory.stable_id.to_string();
+        let project_arg = project.to_string_lossy().into_owned();
+        let cli = Cli::try_parse_from([
+            "agents-manager",
+            "init-memory",
+            "--client",
+            "claude",
+            "--memory",
+            memory_arg.as_str(),
+            "--project",
+            project_arg.as_str(),
+            "--mode",
+            "copy",
+        ])
+        .unwrap();
+
+        let mut output = Vec::new();
+        execute_command(cli.command, &mut output).unwrap();
+
+        let claude = project.join("CLAUDE.md");
+
+        assert!(!fs::symlink_metadata(&claude)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
     }
 
     #[test]

@@ -189,6 +189,7 @@ struct RenameMemoryReq {
 struct InitMemoryCommandReq {
     client: String,
     memory: u64,
+    mode: Option<String>,
     #[serde(default)]
     force: bool,
 }
@@ -463,6 +464,7 @@ fn generate_init_memory_command_cmd(req: InitMemoryCommandReq) -> Result<String,
     Ok(generate_init_memory_command(
         parse_client(&req.client)?,
         req.memory,
+        req.mode.as_deref(),
         req.force,
     ))
 }

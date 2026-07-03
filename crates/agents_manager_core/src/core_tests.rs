@@ -12,14 +12,15 @@ mod tests {
         apply_to_project, bootstrap_legacy_migration, copy_paths_into_entry, create_memory,
         create_skill, delete_memory, delete_skill, doctor, generate_init_memory_command,
         generate_init_project_command, import_dropped_memory, import_dropped_plugin,
-        import_dropped_skill, import_git_skills, init_claude_plugin, init_memory, init_project,
-        load_managed_mcp_config, load_mcp_config, load_skill_registry, preview_dropped_plugin,
-        rename_memory, rename_skill, save_managed_mcp_config, save_mcp_config, save_skill_registry,
-        scan_memory_warehouse, scan_plugin_warehouse, scan_warehouse, sync_global_skills,
-        update_editable_settings, update_skill_metadata, AppConfig, ApplySelections, ClientKind,
-        ClientRoots, CoreError, CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate,
-        GlobalSyncRequest, InitMode, InstallMode, McpServerConfig, McpTarget, Profile,
-        RegistrySkill, SkillEntry, SkillRegistry,
+        import_dropped_skill, import_git_skills, init_claude_plugin, init_memory,
+        init_memory_with_mode, init_project, load_managed_mcp_config, load_mcp_config,
+        load_skill_registry, preview_dropped_plugin, rename_memory, rename_skill,
+        save_managed_mcp_config, save_mcp_config, save_skill_registry, scan_memory_warehouse,
+        scan_plugin_warehouse, scan_warehouse, sync_global_skills, update_editable_settings,
+        update_skill_metadata, AppConfig, ApplySelections, ClientKind, ClientRoots, CoreError,
+        CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest,
+        InitMode, InstallMode, McpServerConfig, McpTarget, Profile, RegistrySkill, SkillEntry,
+        SkillRegistry,
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -741,7 +742,7 @@ mod tests {
 
     #[test]
     fn generate_init_memory_command_uses_client_and_memory_id() {
-        let command = generate_init_memory_command(ClientKind::Claude, 12, false);
+        let command = generate_init_memory_command(ClientKind::Claude, 12, None, false);
 
         assert_eq!(
             command,
@@ -751,11 +752,21 @@ mod tests {
 
     #[test]
     fn generate_init_memory_command_appends_force_flag_when_requested() {
-        let command = generate_init_memory_command(ClientKind::Claude, 12, true);
+        let command = generate_init_memory_command(ClientKind::Claude, 12, None, true);
 
         assert_eq!(
             command,
             "agents-manager init-memory --client claude --memory 12 --project . --force"
+        );
+    }
+
+    #[test]
+    fn generate_init_memory_command_appends_copy_mode_when_requested() {
+        let command = generate_init_memory_command(ClientKind::Claude, 12, Some("copy"), false);
+
+        assert_eq!(
+            command,
+            "agents-manager init-memory --client claude --memory 12 --project . --mode copy"
         );
     }
 
@@ -849,6 +860,33 @@ mod tests {
             .is_symlink());
         assert!(ctx.project.join("AGENTS.md").symlink_metadata().is_err());
         assert_eq!(fs::read_link(&claude).unwrap(), created.memory_md_path);
+        assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
+    }
+
+    #[test]
+    fn init_memory_copy_writes_client_target_as_regular_file() {
+        let ctx = TestCtx::new();
+        let created = create_memory(&ctx.cfg, CreateMemoryRequest { id: "alpha".into() }).unwrap();
+        fs::write(created.memory_md_path.clone(), "remember this").unwrap();
+
+        init_memory_with_mode(
+            ctx.project.as_path(),
+            ClientKind::Claude,
+            created.stable_id,
+            InitMode::Copy,
+            &ctx.cfg,
+        )
+        .unwrap();
+
+        let claude = ctx.project.join("CLAUDE.md");
+
+        assert!(!fs::symlink_metadata(&claude)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
+
+        fs::write(created.memory_md_path, "updated memory").unwrap();
         assert_eq!(fs::read_to_string(&claude).unwrap(), "remember this");
     }
 

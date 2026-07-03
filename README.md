@@ -29,7 +29,7 @@ cargo run -p agents_manager_cli -- init-project \
 
 `init-project` 默认 `symlink`，可用 `--mode copy`；目标已存在时可加 `--force` 直接覆盖。
 
-`init-memory` 可把选中的 memory 写入项目；目标已存在时可加 `--force` 直接覆盖。
+`init-memory` 默认 `symlink`，可用 `--mode copy` 把选中 memory 的 `MEMORY.md` 内容复制到项目目标文件；目标已存在时可加 `--force` 直接覆盖。
 
 旧的 `profile` / `apply` / `doctor` CLI 仍保留，但不再是主工作流。
 
@@ -82,6 +82,7 @@ memory file 请使用单独的 `init-memory` 命令生成。
 ```bash
 agents-manager init-project --client codex --skills 1,2,3 --force
 agents-manager init-memory --client codex --memory 12 --project . --force
+agents-manager init-memory --client codex --memory 12 --project . --mode copy
 ```
 
 ## Profile 示例

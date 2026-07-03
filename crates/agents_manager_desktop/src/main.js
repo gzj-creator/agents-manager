@@ -128,6 +128,7 @@ const state = {
   memories: [],
   selectedMemoryId: null,
   memoryClient: 'codex',
+  memoryInstallMode: 'symlink',
   memoryCommandForce: false,
   generatedMemoryCommand: '',
   memoryCopyFeedback: 'idle',
@@ -1002,6 +1003,7 @@ function renderCurrentPage() {
       selectedMemoryId: state.selectedMemoryId,
       selectedMemory: selectedMemory(),
       client: state.memoryClient,
+      mode: state.memoryInstallMode,
       force: state.memoryCommandForce,
       command: state.generatedMemoryCommand,
       copyLabel: memoryCopyFeedbackLabel(),
@@ -2666,6 +2668,7 @@ async function generateMemoryCommand() {
     req: {
       client: state.memoryClient,
       memory: state.selectedMemoryId,
+      mode: state.memoryInstallMode,
       force
     }
   })
@@ -3046,6 +3049,13 @@ function bindEvents() {
 
     if (event.target.id === 'memoryClientSelect') {
       state.memoryClient = event.target.value
+      resetGeneratedMemoryCommand()
+      syncAll()
+      return
+    }
+
+    if (event.target.id === 'memoryModeSelect') {
+      state.memoryInstallMode = event.target.value
       resetGeneratedMemoryCommand()
       syncAll()
       return

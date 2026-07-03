@@ -40,8 +40,9 @@ pub use mcp::{
 };
 pub use memory::{
     create_memory, delete_memory, generate_init_memory_command, import_dropped_memory, init_memory,
-    init_memory_conflicts, init_memory_with_overwrite, rename_memory, scan_memory_warehouse,
-    CreateMemoryRequest, MemoryEntry,
+    init_memory_conflicts, init_memory_with_mode, init_memory_with_overwrite,
+    init_memory_with_overwrite_mode, rename_memory, scan_memory_warehouse, CreateMemoryRequest,
+    MemoryEntry,
 };
 pub use migration::{bootstrap_legacy_migration, migrate_legacy_skills, MigrationReport};
 pub use plugins::{
