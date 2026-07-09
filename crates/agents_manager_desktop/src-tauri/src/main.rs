@@ -10,9 +10,9 @@ use agents_manager_core::{
     init_claude_plugin, load_app_config, load_managed_mcp_config, migrate_legacy_skills,
     preview_dropped_plugin, preview_dropped_skill, rename_memory, rename_skill, save_app_config,
     save_managed_mcp_config, scan_memory_warehouse, scan_plugin_warehouse, scan_warehouse,
-    sync_global_skills, update_editable_settings, update_skill_metadata, ClientKind, ClientRoots,
-    CreateMemoryRequest, CreateSkillRequest, EditableSettingsUpdate, GlobalSyncRequest, InitMode,
-    InstallMode, McpServerConfig, McpTarget,
+    sync_global_skills, update_editable_settings, update_skill_metadata,
+    warehouse_home_from_config, ClientKind, ClientRoots, CreateMemoryRequest, CreateSkillRequest,
+    EditableSettingsUpdate, GlobalSyncRequest, InitMode, InstallMode, McpServerConfig, McpTarget,
 };
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
@@ -196,14 +196,14 @@ struct InitMemoryCommandReq {
 
 #[derive(Debug, Serialize)]
 struct EditableSettingsPayload {
-    skill_warehouse: String,
+    warehouse_home: String,
     library_roots: Vec<String>,
-    default_skill_warehouse: String,
+    default_warehouse_home: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct SaveEditableSettingsReq {
-    skill_warehouse: String,
+    warehouse_home: String,
     library_roots: Vec<String>,
 }
 
@@ -557,7 +557,7 @@ fn load_editable_settings_cmd() -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn save_editable_settings_cmd(req: SaveEditableSettingsReq) -> Result<serde_json::Value, String> {
     let cfg = load_app_config().map_err(|e| e.to_string())?;
-    let warehouse = req.skill_warehouse.trim();
+    let warehouse = req.warehouse_home.trim();
     if warehouse.is_empty() {
         return Err("warehouse path is required".into());
     }
@@ -565,7 +565,7 @@ fn save_editable_settings_cmd(req: SaveEditableSettingsReq) -> Result<serde_json
     let updated = update_editable_settings(
         &cfg,
         EditableSettingsUpdate {
-            skill_warehouse: Some(PathBuf::from(warehouse)),
+            warehouse_home: Some(PathBuf::from(warehouse)),
             library_roots: Some(
                 req.library_roots
                     .into_iter()
@@ -666,13 +666,13 @@ fn parse_scope(scope: &str) -> Result<&str, String> {
 fn editable_settings_payload(cfg: &agents_manager_core::AppConfig) -> EditableSettingsPayload {
     let defaults = agents_manager_core::AppConfig::default();
     EditableSettingsPayload {
-        skill_warehouse: cfg.skill_warehouse.display().to_string(),
+        warehouse_home: warehouse_home_from_config(cfg).display().to_string(),
         library_roots: cfg
             .library_roots
             .iter()
             .map(|path| path.display().to_string())
             .collect(),
-        default_skill_warehouse: defaults.skill_warehouse.display().to_string(),
+        default_warehouse_home: warehouse_home_from_config(&defaults).display().to_string(),
     }
 }
 

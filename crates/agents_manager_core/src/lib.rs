@@ -54,5 +54,5 @@ pub use registry::{
     load_skill_registry, reconcile_registry, save_skill_registry, update_skill_metadata,
     RegistrySkill, SkillRegistry,
 };
-pub use settings::{update_editable_settings, EditableSettingsUpdate};
+pub use settings::{update_editable_settings, warehouse_home_from_config, EditableSettingsUpdate};
 pub use targets::{ClientKind, ClientRoots};

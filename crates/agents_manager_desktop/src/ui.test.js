@@ -939,11 +939,21 @@ test('styles render the skills page as a continuous split workspace', () => {
   assert.match(css, /\.page-grid--skills\s*\{[\s\S]*background:\s*var\(--workbench-bg\);/)
   assert.match(css, /\.page-body > \.page-grid--skills\s*\{[\s\S]*flex:\s*1;/)
   assert.match(css, /\.page-body > \.page-grid--skills\s*\{[\s\S]*min-height:\s*0;/)
+  assert.match(css, /\.app-stage\[data-page="skills"\]\s*\{[\s\S]*height:\s*var\(--shell-min-height\);/)
+  assert.match(css, /\.app-stage\[data-page="skills"\]\s*\{[\s\S]*overflow:\s*hidden;/)
+  assert.match(css, /\.app-stage\[data-page="skills"\] \.page-body\s*\{[\s\S]*overflow:\s*hidden;/)
+  assert.match(css, /\.app-stage\[data-page="skills"\] \.page-grid--skills\s*\{[\s\S]*height:\s*100%;/)
   assert.match(css, /\.page-grid--skills > \.panel\s*\{[\s\S]*border:\s*0;/)
   assert.match(css, /\.page-grid--skills > \.panel\s*\{[\s\S]*border-radius:\s*0;/)
   assert.match(css, /\.page-grid--skills > \.panel\s*\{[\s\S]*box-shadow:\s*none;/)
   assert.match(css, /\.page-grid--skills > \.panel\s*\{[\s\S]*background:\s*transparent;/)
   assert.match(css, /\.page-grid--skills > \[data-pane-role="details"\]\s*\{[\s\S]*border-left:\s*1px solid rgba\(74, 57, 36, 0\.12\);/)
+  assert.match(css, /\.app-stage\[data-page="skills"\] \.skills-page__details\s*\{[\s\S]*overflow:\s*auto;/)
+  assert.match(css, /\.skills-page__catalog\s*\{[\s\S]*display:\s*flex;/)
+  assert.match(css, /\.skills-page__catalog\s*\{[\s\S]*flex-direction:\s*column;/)
+  assert.match(css, /\.skill-list--page\s*\{[\s\S]*flex:\s*1;/)
+  assert.match(css, /\.skill-list--page\s*\{[\s\S]*min-height:\s*0;/)
+  assert.match(css, /\.skill-list--page\s*\{[\s\S]*max-height:\s*none;/)
 })
 
 test('styles keep memory panels from capturing fixed-position context menus', () => {
@@ -1194,7 +1204,7 @@ test('renderTreeContextMenuHtml renders file actions without create entries', ()
 test('createSettingsPageHtml renders editable app settings only', () => {
   const html = createSettingsPageHtml({
     appVersion: 'v0.4.0',
-    skillWarehouse: '/tmp/warehouse',
+    warehouseHome: '/tmp/agents-manager',
     libraryRoots: ['/tmp/lib-a']
   })
 
@@ -1202,6 +1212,9 @@ test('createSettingsPageHtml renders editable app settings only', () => {
   assert.match(html, /data-role="settings-library-roots"/)
   assert.match(html, /data-role="settings-version"/)
   assert.match(html, /当前版本：v0\.4\.0/)
+  assert.match(html, /Warehouse Home/)
+  assert.match(html, /\/tmp\/agents-manager/)
+  assert.doesNotMatch(html, /Skill Warehouse/)
   assert.doesNotMatch(html, /settings-migration/)
   assert.doesNotMatch(html, /settings-git-import/)
 })
@@ -1263,13 +1276,25 @@ test('main.js tracks checked MCP servers and bulk enable disable actions', () =>
 
 test('createSettingsPageHtml renders warehouse path and advanced source controls', () => {
   const html = createSettingsPageHtml({
-    skillWarehouse: '/tmp/warehouse',
+    warehouseHome: '/tmp/agents-manager',
     libraryRoots: ['/tmp/lib-a', '/tmp/lib-b']
   })
 
   assert.match(html, /选择文件夹/)
   assert.match(html, /恢复默认/)
   assert.match(html, /添加目录/)
+})
+
+test('main.js sends warehouse home when saving editable settings', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /warehouseHome:\s*''/)
+  assert.match(source, /defaultWarehouseHome:\s*''/)
+  assert.match(source, /state\.warehouseHome = payload\.warehouse_home \|\| ''/)
+  assert.match(source, /state\.defaultWarehouseHome = payload\.default_warehouse_home \|\| ''/)
+  assert.match(source, /warehouse_home:\s*state\.warehouseHome\.trim\(\)/)
+  assert.match(source, /async function saveSettings\(\) \{[\s\S]*await Promise\.all\(\[loadSkills\(\), loadMemories\(\)\]\)/)
+  assert.doesNotMatch(source, /skill_warehouse:\s*state\.skillWarehouse\.trim\(\)/)
 })
 
 test('nextEditorState marks buffer dirty after text edit', () => {

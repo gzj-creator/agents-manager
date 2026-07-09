@@ -1764,7 +1764,7 @@ function renderToolOutputHtml(output = null, dataRole = 'migration-output') {
 
 export function createSettingsPageHtml({
   appVersion = '',
-  skillWarehouse = '',
+  warehouseHome = '',
   libraryRoots = []
 } = {}) {
   const rootItems = Array.isArray(libraryRoots)
@@ -1790,17 +1790,17 @@ export function createSettingsPageHtml({
         <div class="panel-head">
           <div>
             <p class="panel-kicker">App Config</p>
-            <h2>Skill Warehouse</h2>
+            <h2>Warehouse Home</h2>
           </div>
         </div>
         <p class="sidebar-copy settings-version" data-role="settings-version">当前版本：${escapeHtml(appVersion || '-')}</p>
-        <p class="sidebar-copy">维护桌面端使用的技能仓库路径。优先通过按钮选择，避免手动记目录结构。</p>
+        <p class="sidebar-copy">维护 agents-manager 的数据家目录。这里会统一派生 skills、memories 和 plugins 仓库路径。</p>
         <label class="field">
-          <span>Warehouse Path</span>
+          <span>Warehouse Home</span>
           <input
             id="settingsWarehouse"
-            value="${escapeHtml(skillWarehouse)}"
-            placeholder="/path/to/warehouse"
+            value="${escapeHtml(warehouseHome)}"
+            placeholder="/path/to/.agents-manager"
           />
         </label>
         <div class="button-row compact settings-actions">

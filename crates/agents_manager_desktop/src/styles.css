@@ -296,6 +296,29 @@ textarea {
   min-height: 0;
 }
 
+.app-stage[data-page="skills"] {
+  height: var(--shell-min-height);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-stage[data-page="skills"] .page-body {
+  overflow: hidden;
+}
+
+.app-stage[data-page="skills"] .page-grid--skills {
+  height: 100%;
+}
+
+.app-stage[data-page="skills"] .skills-page__catalog,
+.app-stage[data-page="skills"] .skills-page__details {
+  min-height: 0;
+}
+
+.app-stage[data-page="skills"] .skills-page__details {
+  overflow: auto;
+}
+
 .skills-page__intro,
 .skills-page__catalog,
 .skills-page__details,
@@ -308,6 +331,11 @@ textarea {
 .skills-toolbar {
   display: grid;
   gap: 12px;
+}
+
+.skills-page__catalog {
+  display: flex;
+  flex-direction: column;
 }
 
 .catalog-count {
@@ -351,7 +379,9 @@ textarea {
 }
 
 .skill-list--page {
-  max-height: calc(100vh - 340px);
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .workspace {

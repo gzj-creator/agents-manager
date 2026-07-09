@@ -138,8 +138,8 @@ const state = {
   memoryRename: createMemoryRenameState(),
   droppedSkillImportConfirm: createDroppedSkillImportConfirmState(),
   appVersion: '',
-  skillWarehouse: '',
-  defaultSkillWarehouse: '',
+  warehouseHome: '',
+  defaultWarehouseHome: '',
   libraryRoots: [],
   skills: [],
   filters: {
@@ -1034,7 +1034,7 @@ function renderCurrentPage() {
   if (state.currentPage === 'settings') {
     pageBody.innerHTML = createSettingsPageHtml({
       appVersion: state.appVersion,
-      skillWarehouse: state.skillWarehouse,
+      warehouseHome: state.warehouseHome,
       libraryRoots: state.libraryRoots
     })
   }
@@ -1211,7 +1211,7 @@ function syncActionUi() {
 
   const saveSettingsButton = document.getElementById('saveSettings')
   if (saveSettingsButton) {
-    saveSettingsButton.disabled = state.action.busy || !state.skillWarehouse.trim()
+    saveSettingsButton.disabled = state.action.busy || !state.warehouseHome.trim()
   }
 
   const pickMcpProject = document.getElementById('pickMcpProject')
@@ -1607,8 +1607,8 @@ async function loadMemories() {
 }
 
 function applyEditableSettingsPayload(payload) {
-  state.skillWarehouse = payload.skill_warehouse || ''
-  state.defaultSkillWarehouse = payload.default_skill_warehouse || ''
+  state.warehouseHome = payload.warehouse_home || ''
+  state.defaultWarehouseHome = payload.default_warehouse_home || ''
   state.libraryRoots = payload.library_roots || []
 }
 
@@ -1633,17 +1633,17 @@ async function pickFolder(startPath = '') {
 }
 
 async function pickSettingsWarehouse() {
-  const next = await pickFolder(state.skillWarehouse)
+  const next = await pickFolder(state.warehouseHome)
   if (!next) {
     return
   }
 
-  state.skillWarehouse = next
+  state.warehouseHome = next
   syncAll()
 }
 
 async function addLibraryRoot() {
-  const next = await pickFolder(state.libraryRoots[0] || state.skillWarehouse)
+  const next = await pickFolder(state.libraryRoots[0] || state.warehouseHome)
   if (!next || state.libraryRoots.includes(next)) {
     return
   }
@@ -1660,13 +1660,13 @@ function removeLibraryRoot(index) {
 async function saveSettings() {
   const payload = await invoke('save_editable_settings_cmd', {
     req: {
-      skill_warehouse: state.skillWarehouse.trim(),
+      warehouse_home: state.warehouseHome.trim(),
       library_roots: state.libraryRoots
     }
   })
 
   applyEditableSettingsPayload(payload)
-  await loadSkills()
+  await Promise.all([loadSkills(), loadMemories()])
   syncAll()
 }
 
@@ -2970,7 +2970,7 @@ function bindEvents() {
     }
 
     if (event.target.id === 'settingsWarehouse') {
-      state.skillWarehouse = event.target.value
+      state.warehouseHome = event.target.value
       syncActionUi()
       return
     }
@@ -3704,7 +3704,7 @@ function bindEvents() {
           runAction('pickFolder', pickSettingsWarehouse)
           return
         case 'resetSettingsWarehouse':
-          state.skillWarehouse = state.defaultSkillWarehouse || state.skillWarehouse
+          state.warehouseHome = state.defaultWarehouseHome || state.warehouseHome
           syncAll()
           return
         case 'addLibraryRoot':

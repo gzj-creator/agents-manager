@@ -12,6 +12,17 @@
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-07-09
+
+### Changed
+
+- Settings 的路径配置改为 `Warehouse Home`，保存 `/Users/.../.agents-manager` 这类家目录后统一派生 `skills`、`memories`、`plugins` 和 `registry.toml`，让 Skills、Memory、MCP/插件相关数据都能从同一个 agents-manager 家目录找到。
+- 保存 Settings 后同时刷新 Skills 与 Memory 数据，避免切换仓库家目录后 Memory 页面仍停留在旧路径数据。
+
+### Fixed
+
+- 修复 Skills 页面左右面板底部不齐、左侧列表留白过大，以及页面可继续向下滚动到空白背景的问题；Skills 详情区改为面板内部滚动。
+
 ## [v0.5.0] - 2026-07-03
 
 ### Added

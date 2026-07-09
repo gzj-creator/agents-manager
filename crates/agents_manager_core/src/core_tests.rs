@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn update_editable_settings_changes_warehouse_and_library_roots_only() {
+    fn update_editable_settings_changes_warehouse_home_and_library_roots() {
         let ctx = TestCtx::new();
         let _lock = ENV_LOCK.lock().unwrap();
         let _env = EnvVarGuard::set(
@@ -384,13 +384,13 @@ mod tests {
             ctx.tmp.path().join("config-dir").as_os_str(),
         );
 
-        let next_warehouse = ctx.tmp.path().join("next-warehouse");
+        let next_home = ctx.tmp.path().join("next-home");
         let next_root = ctx.tmp.path().join("lib-a");
 
         let updated = update_editable_settings(
             &ctx.cfg,
             EditableSettingsUpdate {
-                skill_warehouse: Some(next_warehouse.clone()),
+                warehouse_home: Some(next_home.clone()),
                 library_roots: Some(vec![next_root.clone()]),
             },
         )
@@ -400,23 +400,29 @@ mod tests {
         let saved_contents = fs::read_to_string(&saved_path).unwrap();
         let saved_cfg: AppConfig = toml::from_str(&saved_contents).unwrap();
 
-        assert_eq!(updated.skill_warehouse, next_warehouse);
+        assert_eq!(updated.skill_warehouse, next_home.join("skills"));
+        assert_eq!(updated.memory_warehouse, next_home.join("memories"));
+        assert_eq!(updated.plugin_warehouse, next_home.join("plugins"));
+        assert_eq!(updated.registry_path, next_home.join("registry.toml"));
         assert_eq!(updated.library_roots, vec![next_root]);
         assert!(updated.skill_warehouse.is_dir());
+        assert!(updated.memory_warehouse.is_dir());
+        assert!(updated.plugin_warehouse.is_dir());
 
         assert!(saved_path.is_file());
-        assert!(saved_contents.contains("next-warehouse"));
+        assert!(saved_contents.contains("next-home"));
         assert!(saved_contents.contains("lib-a"));
         assert_eq!(saved_cfg.skill_warehouse, updated.skill_warehouse);
+        assert_eq!(saved_cfg.memory_warehouse, updated.memory_warehouse);
+        assert_eq!(saved_cfg.plugin_warehouse, updated.plugin_warehouse);
+        assert_eq!(saved_cfg.registry_path, updated.registry_path);
         assert_eq!(saved_cfg.library_roots, updated.library_roots);
 
-        assert_eq!(updated.registry_path, ctx.cfg.registry_path);
         assert_eq!(
             updated.bootstrap_migration_done,
             ctx.cfg.bootstrap_migration_done
         );
         assert_eq!(updated.default_profile, ctx.cfg.default_profile);
-        assert_eq!(saved_cfg.registry_path, ctx.cfg.registry_path);
         assert_eq!(
             saved_cfg.bootstrap_migration_done,
             ctx.cfg.bootstrap_migration_done
