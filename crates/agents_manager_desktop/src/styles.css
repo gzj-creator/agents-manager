@@ -333,6 +333,29 @@ textarea {
   gap: 12px;
 }
 
+.skills-toolbar--compact {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.34fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.skills-toolbar--compact .field {
+  gap: 6px;
+}
+
+.skills-toolbar--compact .skills-import-shell {
+  display: contents;
+}
+
+.skills-toolbar--compact .skills-import-shell > button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.skills-toolbar--compact .skills-import-panel {
+  grid-column: 1 / -1;
+}
+
 .skills-page__catalog {
   display: flex;
   flex-direction: column;
@@ -347,13 +370,12 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  margin-bottom: 12px;
+  margin: 8px 0;
 }
 
 .skills-import-shell {
   display: grid;
   gap: 10px;
-  margin-top: 8px;
 }
 
 .skills-import-panel {
@@ -382,6 +404,7 @@ textarea {
   flex: 1;
   min-height: 0;
   max-height: none;
+  align-content: start;
 }
 
 .workspace {
@@ -1831,6 +1854,15 @@ code {
 
   .skill-list {
     max-height: none;
+  }
+
+  .skills-toolbar--compact {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .skills-toolbar--compact .skills-import-shell {
+    display: grid;
   }
 }
 

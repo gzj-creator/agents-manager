@@ -1125,7 +1125,7 @@ function renderSkillsImportPanelHtml({
   const triggerLabel = importExpanded ? '收起仓库操作' : '仓库导入与迁移'
 
   return `
-    <section class="skills-import-shell">
+    <section class="skills-import-shell skills-toolbar__import">
       <button
         id="toggleSkillsImport"
         class="ghost"
@@ -1451,8 +1451,8 @@ export function createSkillsPageHtml({
             <button id="refresh" class="ghost compact-button" type="button">刷新</button>
           </div>
         </div>
-        <div class="skills-toolbar">
-          <label class="field">
+        <div class="skills-toolbar skills-toolbar--compact">
+          <label class="field skills-toolbar__search">
             <span>搜索</span>
             <input
               id="searchInput"
@@ -1461,12 +1461,20 @@ export function createSkillsPageHtml({
               placeholder="搜索名称 / ID / 描述"
             />
           </label>
-          <label class="field">
+          <label class="field skills-toolbar__tag">
             <span>标签</span>
             <select id="tagFilter" data-role="skills-tag-filter">
               ${renderTagOptionsHtml(tags, tag)}
             </select>
           </label>
+          ${renderSkillsImportPanelHtml({
+            importExpanded,
+            gitImportUrl,
+            migrationResult,
+            migrationOutput,
+            gitImportResult,
+            gitImportOutput
+          })}
         </div>
         ${createOpen
           ? renderCreateSkillInlineHtml({
@@ -1475,14 +1483,6 @@ export function createSkillsPageHtml({
               createTargetLabel
             })
           : ''}
-        ${renderSkillsImportPanelHtml({
-          importExpanded,
-          gitImportUrl,
-          migrationResult,
-          migrationOutput,
-          gitImportResult,
-          gitImportOutput
-        })}
         <div class="catalog-toolbar">
           <span class="catalog-count">${skills.length} skills</span>
         </div>
