@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 
 use agents_manager_core::{
     bootstrap_legacy_migration, copy_paths_into_entry, create_memory, create_skill, delete_memory,
@@ -628,6 +629,67 @@ fn pick_folder_cmd(req: Option<PickFolderReq>) -> Result<Option<String>, String>
 }
 
 #[tauri::command]
+fn export_warehouse_archive_cmd() -> Result<Option<String>, String> {
+    let cfg = load_app_config().map_err(|e| e.to_string())?;
+    let warehouse_home = warehouse_home_from_config(&cfg);
+    if !warehouse_home.is_dir() {
+        return Err(format!(
+            "warehouse directory does not exist: {}",
+            warehouse_home.display()
+        ));
+    }
+
+    let Some(selected_path) = FileDialog::new()
+        .add_filter("ZIP archive", &["zip"])
+        .set_file_name("agents-manager-backup.zip")
+        .save_file()
+    else {
+        return Ok(None);
+    };
+
+    let archive_path = if selected_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+    {
+        selected_path
+    } else {
+        selected_path.with_extension("zip")
+    };
+
+    if archive_path.exists() {
+        return Err(format!(
+            "archive already exists: {}",
+            archive_path.display()
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("/usr/bin/ditto")
+            .args(["-c", "-k", "--sequesterRsrc", "--keepParent"])
+            .arg(&warehouse_home)
+            .arg(&archive_path)
+            .output()
+            .map_err(|error| format!("failed to start archive tool: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "failed to create archive: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = warehouse_home;
+        return Err("warehouse archive export is currently supported on macOS only".to_string());
+    }
+
+    Ok(Some(archive_path.display().to_string()))
+}
+
+#[tauri::command]
 fn app_version_cmd(app: tauri::AppHandle) -> Result<String, String> {
     Ok(app.package_info().version.to_string())
 }
@@ -863,6 +925,7 @@ fn main() {
             load_mcp_config_cmd,
             save_mcp_config_cmd,
             pick_folder_cmd,
+            export_warehouse_archive_cmd,
             app_version_cmd
         ])
         .run(tauri::generate_context!())

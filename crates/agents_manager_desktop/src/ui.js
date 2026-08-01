@@ -124,6 +124,11 @@ const ACTION_COPY = {
     success: '设置已保存',
     error: '设置保存失败'
   },
+  exportWarehouseArchive: {
+    start: '正在导出迁移包',
+    success: '迁移包已导出',
+    error: '迁移包导出失败'
+  },
   pickFolder: {
     start: '正在选择目录',
     success: '目录已选中',
@@ -1785,15 +1790,15 @@ export function createSettingsPageHtml({
     : ''
 
   return `
-    <section class="page-grid page-grid--split">
+    <section class="page-grid page-grid--settings">
       <article class="panel" data-role="settings-warehouse">
         <div class="panel-head">
           <div>
             <p class="panel-kicker">App Config</p>
             <h2>Warehouse Home</h2>
           </div>
+          <span class="settings-version" data-role="settings-version">${escapeHtml(appVersion || '-')}</span>
         </div>
-        <p class="sidebar-copy settings-version" data-role="settings-version">当前版本：${escapeHtml(appVersion || '-')}</p>
         <p class="sidebar-copy">维护 agents-manager 的数据家目录。这里会统一派生 skills、memories 和 plugins 仓库路径。</p>
         <label class="field">
           <span>Warehouse Home</span>
@@ -1824,6 +1829,17 @@ export function createSettingsPageHtml({
         <div class="button-row compact settings-actions">
           <button id="addLibraryRoot" class="secondary" type="button">添加目录</button>
         </div>
+      </article>
+
+      <article class="panel settings-backup" data-role="settings-backup">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Migration</p>
+            <h2>迁移备份</h2>
+          </div>
+          <button id="exportWarehouseArchive" class="primary" type="button">导出迁移包</button>
+        </div>
+        <p class="sidebar-copy">将当前 Warehouse Home 打包为 zip，包含 skills、memories、plugins 和 registry.toml，便于迁移到另一台设备。</p>
       </article>
     </section>
   `

@@ -228,6 +228,7 @@ const ACTION_BUTTON_IDS = [
   'resetSettingsWarehouse',
   'addLibraryRoot',
   'saveSettings',
+  'exportWarehouseArchive',
   'reloadMcp',
   'pickMcpProject',
   'newMcpServer',
@@ -1668,6 +1669,15 @@ async function saveSettings() {
   applyEditableSettingsPayload(payload)
   await Promise.all([loadSkills(), loadMemories()])
   syncAll()
+}
+
+async function exportWarehouseArchive() {
+  const archivePath = await invoke('export_warehouse_archive_cmd')
+  if (!archivePath) {
+    return ACTION_CANCELLED
+  }
+
+  print(`迁移包已保存到 ${archivePath}`, 'success')
 }
 
 function ensureCompatibleMcpScope() {
@@ -3712,6 +3722,9 @@ function bindEvents() {
           return
         case 'saveSettings':
           runAction('saveSettings', saveSettings)
+          return
+        case 'exportWarehouseArchive':
+          runAction('exportWarehouseArchive', exportWarehouseArchive)
           return
         case 'syncSkills':
           runAction('sync', syncSkills)

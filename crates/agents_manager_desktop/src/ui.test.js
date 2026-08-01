@@ -973,6 +973,7 @@ test('styles keep the memory sidebar stacked without stretching delete confirmat
   assert.match(css, /\.memory-sidebar\s*\{[\s\S]*display:\s*flex;/)
   assert.match(css, /\.memory-sidebar\s*\{[\s\S]*flex-direction:\s*column;/)
   assert.match(css, /\.memory-list\s*\{[\s\S]*flex:\s*1;/)
+  assert.match(css, /\.memory-list\s*\{[\s\S]*max-height:\s*none;/)
 })
 
 test('groupSkillsByTag creates warehouse folders from tags and uncategorized skills', () => {
@@ -1205,7 +1206,7 @@ test('renderTreeContextMenuHtml renders file actions without create entries', ()
   assert.doesNotMatch(html, /data-tree-menu-action="create-folder"/)
 })
 
-test('createSettingsPageHtml renders editable app settings only', () => {
+test('createSettingsPageHtml renders editable app settings and migration backup', () => {
   const html = createSettingsPageHtml({
     appVersion: 'v0.4.0',
     warehouseHome: '/tmp/agents-manager',
@@ -1215,9 +1216,12 @@ test('createSettingsPageHtml renders editable app settings only', () => {
   assert.match(html, /data-role="settings-warehouse"/)
   assert.match(html, /data-role="settings-library-roots"/)
   assert.match(html, /data-role="settings-version"/)
-  assert.match(html, /当前版本：v0\.4\.0/)
+  assert.match(html, />v0\.4\.0</)
   assert.match(html, /Warehouse Home/)
   assert.match(html, /\/tmp\/agents-manager/)
+  assert.match(html, /data-role="settings-backup"/)
+  assert.match(html, /id="exportWarehouseArchive"/)
+  assert.match(html, /导出迁移包/)
   assert.doesNotMatch(html, /Skill Warehouse/)
   assert.doesNotMatch(html, /settings-migration/)
   assert.doesNotMatch(html, /settings-git-import/)
@@ -1299,6 +1303,13 @@ test('main.js sends warehouse home when saving editable settings', () => {
   assert.match(source, /warehouse_home:\s*state\.warehouseHome\.trim\(\)/)
   assert.match(source, /async function saveSettings\(\) \{[\s\S]*await Promise\.all\(\[loadSkills\(\), loadMemories\(\)\]\)/)
   assert.doesNotMatch(source, /skill_warehouse:\s*state\.skillWarehouse\.trim\(\)/)
+})
+
+test('main.js exports the current warehouse through the Tauri bridge', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /async function exportWarehouseArchive\(\) \{[\s\S]*invoke\('export_warehouse_archive_cmd'\)/)
+  assert.match(source, /case 'exportWarehouseArchive':[\s\S]*runAction\('exportWarehouseArchive', exportWarehouseArchive\)/)
 })
 
 test('nextEditorState marks buffer dirty after text edit', () => {

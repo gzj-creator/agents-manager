@@ -272,6 +272,13 @@ textarea {
   align-items: start;
 }
 
+.page-grid--settings {
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  align-items: start;
+  gap: 18px;
+  max-width: 1180px;
+}
+
 .page-grid--mcp {
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   align-items: stretch;
@@ -1283,7 +1290,7 @@ textarea:focus {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(74, 57, 36, 0.1);
   background: rgba(255, 251, 245, 0.8);
 }
@@ -1317,7 +1324,7 @@ textarea:focus {
   gap: 6px;
   align-content: start;
   min-height: 0;
-  max-height: calc(100vh - 360px);
+  max-height: none;
   overflow: auto;
   padding: 4px;
   border-radius: 16px;
@@ -1678,7 +1685,21 @@ textarea:focus {
 }
 
 .settings-version {
-  margin-bottom: 6px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.settings-backup {
+  grid-column: 1 / -1;
+}
+
+.settings-backup .panel-head {
+  align-items: center;
+}
+
+.settings-backup .sidebar-copy {
+  max-width: 760px;
 }
 
 .button-row.stacked {
@@ -1836,6 +1857,7 @@ code {
   .page-grid--editor,
   .page-grid--memory,
   .page-grid--split,
+  .page-grid--settings,
   .page-grid--mcp {
     grid-template-columns: 1fr;
   }
