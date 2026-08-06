@@ -229,6 +229,7 @@ const ACTION_BUTTON_IDS = [
   'addLibraryRoot',
   'saveSettings',
   'exportWarehouseArchive',
+  'restoreWarehouseArchive',
   'reloadMcp',
   'pickMcpProject',
   'newMcpServer',
@@ -1678,6 +1679,25 @@ async function exportWarehouseArchive() {
   }
 
   print(`迁移包已保存到 ${archivePath}`, 'success')
+}
+
+async function restoreWarehouseArchive() {
+  if (!confirmDiscardEditorChanges('从迁移包恢复')) {
+    return ACTION_CANCELLED
+  }
+  if (!window.confirm('恢复会覆盖当前 Warehouse 中的所有内容，确定继续吗？')) {
+    return ACTION_CANCELLED
+  }
+
+  const archivePath = await invoke('restore_warehouse_archive_cmd')
+  if (!archivePath) {
+    return ACTION_CANCELLED
+  }
+
+  closeEditorSession()
+  await Promise.all([loadSkills(), loadMemories()])
+  syncAll()
+  print(`已从 ${archivePath} 恢复 Warehouse`, 'success')
 }
 
 function ensureCompatibleMcpScope() {
@@ -3725,6 +3745,9 @@ function bindEvents() {
           return
         case 'exportWarehouseArchive':
           runAction('exportWarehouseArchive', exportWarehouseArchive)
+          return
+        case 'restoreWarehouseArchive':
+          runAction('restoreWarehouseArchive', restoreWarehouseArchive)
           return
         case 'syncSkills':
           runAction('sync', syncSkills)

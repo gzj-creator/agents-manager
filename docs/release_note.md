@@ -1,5 +1,18 @@
 # Release Notes
 
+## v1.1.1 - 2026-08-06
+
+- 版本级别：小版本
+- Git 提交消息：`fix: 规范迁移包导入导出并发布 v1.1.1`
+- Git Tag：`v1.1.1`
+
+### 变更摘要
+
+- Settings 新增“从迁移包恢复”，恢复前明确提示覆盖风险，恢复后刷新 Skills、Memories 与编辑器状态。
+- 新导出包固定使用 `agents-manager-backup/` 根目录，并写入版本化 `migration-manifest.json`，包含格式标识、格式版本、应用版本与内容清单。
+- 恢复前校验 `skills`、`memories`、`plugins`、`registry.toml` 与清单版本，将 registry 中的旧设备绝对路径重定位到当前 Warehouse，保留 stable ID 和标签；恢复使用可回滚的目录替换，并兼容 v1.1.0 旧迁移包。
+- 完成 Rust 工作区测试、桌面端测试、Vite 生产构建与 Linux `.deb` 打包校验。
+
 ## v0.6.0 - 2026-07-09
 
 - 版本级别：中版本

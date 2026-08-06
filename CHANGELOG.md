@@ -12,6 +12,22 @@
 
 ## [Unreleased]
 
+## [v1.1.1] - 2026-08-06
+
+### Added
+
+- Settings 新增从迁移包恢复 Warehouse 的入口，恢复后自动刷新 Skills 与 Memories。
+- 新导出的迁移包包含 `migration-manifest.json`，明确记录格式、格式版本、应用版本与必需内容。
+
+### Changed
+
+- 迁移包固定使用 `agents-manager-backup/` 根目录，导出前同步 `registry.toml`，恢复时校验清单和 Warehouse 完整结构。
+- 恢复采用同盘临时目录解压与目录替换，并将 registry 中的旧设备绝对路径重定位到当前 Warehouse，保留 stable ID 和标签；失败时回滚原 Warehouse，同时继续兼容 `v1.1.0` 无清单迁移包。
+
+### Tests
+
+- 补充迁移包结构、清单版本、旧包兼容和桌面端恢复桥接回归测试。
+
 ## [v1.1.0] - 2026-08-01
 
 ### Added

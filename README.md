@@ -118,6 +118,20 @@ GUI 支持：
 - 生成 `init-project` 命令
 - 维护 Codex / Claude / Cursor 的 MCP 配置
 - 编辑应用内可维护的 warehouse 与 library roots 配置
+- 导出 Warehouse 迁移包，并从迁移包校验、恢复
+
+新版迁移包为 zip 格式，固定包含以下结构：
+
+```text
+agents-manager-backup/
+  migration-manifest.json
+  registry.toml
+  skills/
+  memories/
+  plugins/
+```
+
+`migration-manifest.json` 记录迁移格式版本和内容清单。恢复会先解压到临时目录并校验，将 registry 绝对路径重定位到当前 Warehouse，再替换当前内容；无清单的 v1.1.0 迁移包仍可导入。
 
 当前桌面客户端为单窗口分页结构：
 

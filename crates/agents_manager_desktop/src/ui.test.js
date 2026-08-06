@@ -1222,6 +1222,8 @@ test('createSettingsPageHtml renders editable app settings and migration backup'
   assert.match(html, /data-role="settings-backup"/)
   assert.match(html, /id="exportWarehouseArchive"/)
   assert.match(html, /导出迁移包/)
+  assert.match(html, /id="restoreWarehouseArchive"/)
+  assert.match(html, /从迁移包恢复/)
   assert.doesNotMatch(html, /Skill Warehouse/)
   assert.doesNotMatch(html, /settings-migration/)
   assert.doesNotMatch(html, /settings-git-import/)
@@ -1310,6 +1312,14 @@ test('main.js exports the current warehouse through the Tauri bridge', () => {
 
   assert.match(source, /async function exportWarehouseArchive\(\) \{[\s\S]*invoke\('export_warehouse_archive_cmd'\)/)
   assert.match(source, /case 'exportWarehouseArchive':[\s\S]*runAction\('exportWarehouseArchive', exportWarehouseArchive\)/)
+})
+
+test('main.js restores the current warehouse through the Tauri bridge', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /async function restoreWarehouseArchive\(\) \{[\s\S]*window\.confirm\([\s\S]*invoke\('restore_warehouse_archive_cmd'\)/)
+  assert.match(source, /restoreWarehouseArchive\(\)[\s\S]*await Promise\.all\(\[loadSkills\(\), loadMemories\(\)\]\)/)
+  assert.match(source, /case 'restoreWarehouseArchive':[\s\S]*runAction\('restoreWarehouseArchive', restoreWarehouseArchive\)/)
 })
 
 test('nextEditorState marks buffer dirty after text edit', () => {

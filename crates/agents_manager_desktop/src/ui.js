@@ -129,6 +129,11 @@ const ACTION_COPY = {
     success: '迁移包已导出',
     error: '迁移包导出失败'
   },
+  restoreWarehouseArchive: {
+    start: '正在从迁移包恢复',
+    success: '迁移包已恢复',
+    error: '迁移包恢复失败'
+  },
   pickFolder: {
     start: '正在选择目录',
     success: '目录已选中',
@@ -1837,9 +1842,12 @@ export function createSettingsPageHtml({
             <p class="panel-kicker">Migration</p>
             <h2>迁移备份</h2>
           </div>
-          <button id="exportWarehouseArchive" class="primary" type="button">导出迁移包</button>
+          <div class="button-row compact">
+            <button id="restoreWarehouseArchive" class="secondary" type="button">从迁移包恢复</button>
+            <button id="exportWarehouseArchive" class="primary" type="button">导出迁移包</button>
+          </div>
         </div>
-        <p class="sidebar-copy">将当前 Warehouse Home 打包为 zip，包含 skills、memories、plugins 和 registry.toml，便于迁移到另一台设备。</p>
+        <p class="sidebar-copy">将当前 Warehouse Home 打包为 zip，或从已导出的迁移包恢复 skills、memories、plugins 和 registry.toml。</p>
       </article>
     </section>
   `
