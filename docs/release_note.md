@@ -1,5 +1,18 @@
 # Release Notes
 
+## v1.1.3 - 2026-08-06
+
+- 版本级别：修复版本
+- Git 提交消息：`fix: 发布 agents-manager v1.1.3`
+- Git Tag：`v1.1.3`
+
+### 变更摘要
+
+- Debian 安装包现在会同时安装 `agents-manager` CLI 到 `/usr/local/bin`。
+- 修复勾选 Skill 后列表滚动位置跳回顶部的问题。
+- 收紧标签筛选、客户端和同步模式选择框的宽度，减少界面空间占用。
+- 完成桌面端测试、Rust 工作区测试与 Linux `.deb` 打包校验。
+
 ## v1.1.2 - 2026-08-06
 
 - 版本级别：小版本

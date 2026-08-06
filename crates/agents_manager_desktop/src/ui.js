@@ -1376,7 +1376,7 @@ function renderSkillsMetadataPanelHtml(selectedSkill = null, {
           <span>命令目标</span>
           <strong>${escapeHtml(distributionSummary || `当前 skill：${selectedSkill.name || selectedSkill.id}`)}</strong>
         </div>
-        <label class="field">
+        <label class="field field--choice">
           <span>客户端</span>
           <select id="clientSelect" data-role="sync-client">
             <option value="codex"${client === 'codex' ? ' selected' : ''}>Codex</option>
@@ -1384,7 +1384,7 @@ function renderSkillsMetadataPanelHtml(selectedSkill = null, {
             <option value="cursor"${client === 'cursor' ? ' selected' : ''}>Cursor</option>
           </select>
         </label>
-        <label class="field">
+        <label class="field field--choice">
           <span>同步模式</span>
           <select id="modeSelect">
             <option value="symlink"${mode === 'symlink' ? ' selected' : ''}>symlink</option>
@@ -1471,7 +1471,7 @@ export function createSkillsPageHtml({
               placeholder="搜索名称 / ID / 描述"
             />
           </label>
-          <label class="field skills-toolbar__tag">
+          <label class="field field--choice skills-toolbar__tag">
             <span>标签</span>
             <select id="tagFilter" data-role="skills-tag-filter">
               ${renderTagOptionsHtml(tags, tag)}
@@ -1584,7 +1584,7 @@ function renderMemoryMetadataPanelHtml(selectedMemory = null, {
           <span>命令目标</span>
           <strong class="memory-context" data-role="memory-selected-context">${escapeHtml(selectedContext)}</strong>
         </div>
-        <label class="field">
+        <label class="field field--choice">
           <span>客户端</span>
           <select id="memoryClientSelect" data-role="memory-client">
             <option value="codex"${client === 'codex' ? ' selected' : ''}>Codex</option>
@@ -1592,7 +1592,7 @@ function renderMemoryMetadataPanelHtml(selectedMemory = null, {
             <option value="cursor"${client === 'cursor' ? ' selected' : ''}>Cursor</option>
           </select>
         </label>
-        <label class="field">
+        <label class="field field--choice">
           <span>同步模式</span>
           <select id="memoryModeSelect" data-role="memory-mode">
             <option value="symlink"${mode === 'symlink' ? ' selected' : ''}>symlink</option>

@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+## [v1.1.3] - 2026-08-06
+
+### Fixed
+
+- Debian 安装包现在会同时安装 `agents-manager` CLI 到 `/usr/local/bin`。
+- 修复勾选 Skill 后列表滚动位置跳回顶部的问题。
+- 收紧标签筛选、客户端和同步模式选择框的宽度，减少界面空间占用。
+
+### Tests
+
+- 通过桌面端测试、Rust 工作区测试和 Linux `.deb` 打包校验。
+
 ## [v1.1.2] - 2026-08-06
 
 ### Fixed

@@ -692,7 +692,7 @@ test('createSkillsPageHtml includes search, tag filter, and grouped result list'
   assert.match(html, /data-pane-role="details"/)
   assert.match(html, /class="skills-toolbar skills-toolbar--compact"/)
   assert.match(html, /class="field skills-toolbar__search"/)
-  assert.match(html, /class="field skills-toolbar__tag"/)
+  assert.match(html, /class="field field--choice skills-toolbar__tag"/)
   assert.match(html, /class="[^"]*skills-toolbar__import[^"]*"/)
   assert.match(html, /data-role="skills-search"/)
   assert.match(html, /data-role="skills-tag-filter"/)
@@ -958,6 +958,15 @@ test('styles render the skills page as a continuous split workspace', () => {
   assert.match(css, /\.skill-list--page\s*\{[\s\S]*flex:\s*1;/)
   assert.match(css, /\.skill-list--page\s*\{[\s\S]*min-height:\s*0;/)
   assert.match(css, /\.skill-list--page\s*\{[\s\S]*max-height:\s*none;/)
+  assert.match(css, /\.skills-toolbar--compact\s*\{[\s\S]*minmax\(110px, 160px\)/)
+  assert.match(css, /\.field--choice select\s*\{[\s\S]*width:\s*fit-content;/)
+})
+
+test('main.js preserves the skill list scroll position when checking a skill', () => {
+  const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8')
+
+  assert.match(source, /event\.target\.matches\('\[data-skill-check\]'\)[\s\S]*const scrollTop = skillList\?\.scrollTop/)
+  assert.match(source, /const nextSkillList = document\.getElementById\('skillList'\)[\s\S]*nextSkillList\.scrollTop = scrollTop/)
 })
 
 test('styles keep the desktop shell fixed and give memory its own scroll panes', () => {

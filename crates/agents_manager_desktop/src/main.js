@@ -3058,9 +3058,15 @@ function bindEvents() {
     }
 
     if (event.target.matches('[data-skill-check]')) {
+      const skillList = document.getElementById('skillList')
+      const scrollTop = skillList?.scrollTop || 0
       toggleCheckedSkillId(Number(event.target.dataset.skillCheck), event.target.checked)
       resetGeneratedCommand()
       syncAll()
+      const nextSkillList = document.getElementById('skillList')
+      if (nextSkillList) {
+        nextSkillList.scrollTop = scrollTop
+      }
       return
     }
 

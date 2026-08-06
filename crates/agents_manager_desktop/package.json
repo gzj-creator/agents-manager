@@ -1,12 +1,13 @@
 {
   "name": "agents-manager-desktop",
   "private": true,
-  "version": "1.1.2",
+  "version": "1.1.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "test": "node --test src/ui.test.js src/capabilities.test.js src/icon-assets.test.js scripts/macos-package.test.mjs",
     "build": "vite build",
+    "build:cli": "cargo build --release --manifest-path ../../Cargo.toml -p agents_manager_cli",
     "package:macos": "node ./scripts/macos-package.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
