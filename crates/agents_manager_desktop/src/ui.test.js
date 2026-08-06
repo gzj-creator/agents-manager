@@ -958,8 +958,9 @@ test('styles render the skills page as a continuous split workspace', () => {
   assert.match(css, /\.skill-list--page\s*\{[\s\S]*flex:\s*1;/)
   assert.match(css, /\.skill-list--page\s*\{[\s\S]*min-height:\s*0;/)
   assert.match(css, /\.skill-list--page\s*\{[\s\S]*max-height:\s*none;/)
-  assert.match(css, /\.skills-toolbar--compact\s*\{[\s\S]*minmax\(110px, 160px\)/)
-  assert.match(css, /\.field--choice select\s*\{[\s\S]*width:\s*fit-content;/)
+  assert.match(css, /\.skills-toolbar--compact\s*\{[\s\S]*minmax\(150px, 0\.34fr\)/)
+  assert.match(css, /\.field--choice select\s*\{[\s\S]*min-height:\s*34px;/)
+  assert.match(css, /\.field--choice select\s*\{[\s\S]*padding:\s*6px 12px;/)
 })
 
 test('main.js preserves the skill list scroll position when checking a skill', () => {
