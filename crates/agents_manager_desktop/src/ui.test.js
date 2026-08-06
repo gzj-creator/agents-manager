@@ -960,6 +960,18 @@ test('styles render the skills page as a continuous split workspace', () => {
   assert.match(css, /\.skill-list--page\s*\{[\s\S]*max-height:\s*none;/)
 })
 
+test('styles keep the desktop shell fixed and give memory its own scroll panes', () => {
+  const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+
+  assert.match(css, /html,[\s\S]*body\s*\{[\s\S]*height:\s*100%;[\s\S]*overflow:\s*hidden;/)
+  assert.match(css, /\.app-shell\s*\{[\s\S]*height:\s*100vh;[\s\S]*overflow:\s*hidden;/)
+  assert.match(css, /\.app-stage\s*\{[\s\S]*height:\s*var\(--shell-min-height\);[\s\S]*overflow:\s*hidden;/)
+  assert.match(css, /\.app-stage\[data-page="memory"\] \.page-body\s*\{[\s\S]*overflow:\s*hidden;/)
+  assert.match(css, /\.app-stage\[data-page="memory"\] \.page-grid--memory\s*\{[\s\S]*height:\s*100%;/)
+  assert.match(css, /\.app-stage\[data-page="memory"\] \.skills-page__details\s*\{[\s\S]*overflow:\s*auto;/)
+  assert.match(css, /@media \(max-width: 1180px\)\s*\{[\s\S]*html,[\s\S]*body\s*\{[\s\S]*overflow:\s*auto;/)
+})
+
 test('styles keep memory panels from capturing fixed-position context menus', () => {
   const css = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 
