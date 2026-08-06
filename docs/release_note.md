@@ -10,6 +10,7 @@
 
 - Settings 新增“从迁移包恢复”，恢复前明确提示覆盖风险，恢复后刷新 Skills、Memories 与编辑器状态。
 - 新导出包固定使用 `agents-manager-backup/` 根目录，并写入版本化 `migration-manifest.json`，包含格式标识、格式版本、应用版本与内容清单。
+- Linux 与 macOS 桌面端都支持标准 zip 迁移包的导出与恢复。
 - 恢复前校验 `skills`、`memories`、`plugins`、`registry.toml` 与清单版本，将 registry 中的旧设备绝对路径重定位到当前 Warehouse，保留 stable ID 和标签；恢复使用可回滚的目录替换，并兼容 v1.1.0 旧迁移包。
 - 完成 Rust 工作区测试、桌面端测试、Vite 生产构建与 Linux `.deb` 打包校验。
 

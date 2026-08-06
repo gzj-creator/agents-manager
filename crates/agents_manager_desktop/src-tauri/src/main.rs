@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 use std::process::Command;
 
 use agents_manager_core::{
@@ -16,20 +16,20 @@ use agents_manager_core::{
     warehouse_home_from_config, ClientKind, ClientRoots, CreateMemoryRequest, CreateSkillRequest,
     EditableSettingsUpdate, GlobalSyncRequest, InitMode, InstallMode, McpServerConfig, McpTarget,
 };
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 use agents_manager_core::{load_skill_registry, save_skill_registry};
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const MIGRATION_ARCHIVE_ROOT: &str = "agents-manager-backup";
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const MIGRATION_MANIFEST_NAME: &str = "migration-manifest.json";
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const MIGRATION_FORMAT: &str = "agents-manager-warehouse";
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const MIGRATION_FORMAT_VERSION: u32 = 1;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const MIGRATION_CONTENTS: [&str; 4] = ["skills", "memories", "plugins", "registry.toml"];
 
 #[derive(Debug, Clone, Serialize)]
@@ -248,7 +248,7 @@ struct PickFolderReq {
     start_path: Option<String>,
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 #[derive(Debug, Deserialize, Serialize)]
 struct MigrationManifest {
     format: String,
@@ -722,10 +722,47 @@ fn export_warehouse_archive_cmd() -> Result<Option<String>, String> {
         Ok(Some(archive_path.display().to_string()))
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        scan_warehouse(&cfg).map_err(|error| format!("failed to update registry: {error}"))?;
+        let staging = tempfile::tempdir()
+            .map_err(|error| format!("failed to create export staging directory: {error}"))?;
+        let staged_home = staging.path().join(MIGRATION_ARCHIVE_ROOT);
+
+        let copy_output = Command::new("/bin/cp")
+            .args(["-a"])
+            .arg(&warehouse_home)
+            .arg(&staged_home)
+            .output()
+            .map_err(|error| format!("failed to start warehouse copy: {error}"))?;
+        if !copy_output.status.success() {
+            return Err(format!(
+                "failed to stage warehouse: {}",
+                String::from_utf8_lossy(&copy_output.stderr).trim()
+            ));
+        }
+        write_migration_manifest(&staged_home)?;
+
+        let output = Command::new("/usr/bin/zip")
+            .args(["-r", "-y"])
+            .arg(&archive_path)
+            .arg(MIGRATION_ARCHIVE_ROOT)
+            .current_dir(staging.path())
+            .output()
+            .map_err(|error| format!("failed to start archive tool: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "failed to create archive: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Ok(Some(archive_path.display().to_string()))
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = warehouse_home;
-        Err("warehouse archive export is currently supported on macOS only".to_string())
+        Err("warehouse archive export is currently supported on macOS and Linux only".to_string())
     }
 }
 
@@ -741,20 +778,20 @@ fn restore_warehouse_archive_cmd() -> Result<Option<String>, String> {
         return Ok(None);
     };
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         restore_warehouse_archive(&archive_path, &warehouse_home, &cfg)?;
         Ok(Some(archive_path.display().to_string()))
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (&archive_path, &warehouse_home);
-        Err("warehouse archive restore is currently supported on macOS only".to_string())
+        Err("warehouse archive restore is currently supported on macOS and Linux only".to_string())
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn restore_warehouse_archive(
     archive_path: &Path,
     warehouse_home: &Path,
@@ -784,9 +821,18 @@ fn restore_warehouse_archive(
     fs::create_dir(&extracted)
         .map_err(|error| format!("failed to prepare restore staging directory: {error}"))?;
 
+    #[cfg(target_os = "macos")]
     let output = Command::new("/usr/bin/ditto")
         .args(["-x", "-k"])
         .arg(archive_path)
+        .arg(&extracted)
+        .output()
+        .map_err(|error| format!("failed to start archive tool: {error}"))?;
+    #[cfg(target_os = "linux")]
+    let output = Command::new("/usr/bin/unzip")
+        .args(["-q"])
+        .arg(archive_path)
+        .arg("-d")
         .arg(&extracted)
         .output()
         .map_err(|error| format!("failed to start archive tool: {error}"))?;
@@ -819,7 +865,7 @@ fn restore_warehouse_archive(
     Ok(())
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn find_restored_warehouse(extracted: &Path) -> Result<PathBuf, String> {
     if is_warehouse_home(extracted) {
         validate_migration_manifest(extracted)?;
@@ -844,7 +890,7 @@ fn find_restored_warehouse(extracted: &Path) -> Result<PathBuf, String> {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn write_migration_manifest(warehouse: &Path) -> Result<(), String> {
     let manifest = MigrationManifest {
         format: MIGRATION_FORMAT.to_string(),
@@ -861,7 +907,7 @@ fn write_migration_manifest(warehouse: &Path) -> Result<(), String> {
         .map_err(|error| format!("failed to write migration manifest: {error}"))
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn validate_migration_manifest(warehouse: &Path) -> Result<(), String> {
     let manifest_path = warehouse.join(MIGRATION_MANIFEST_NAME);
     if !manifest_path.exists() {
@@ -896,7 +942,7 @@ fn validate_migration_manifest(warehouse: &Path) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn prepare_restored_registry(
     restored_home: &Path,
     destination_home: &Path,
@@ -937,7 +983,7 @@ fn prepare_restored_registry(
         .map_err(|error| format!("failed to prepare migration registry: {error}"))
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn is_warehouse_home(path: &Path) -> bool {
     ["skills", "memories", "plugins"]
         .iter()

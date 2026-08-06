@@ -120,7 +120,7 @@ GUI 支持：
 - 编辑应用内可维护的 warehouse 与 library roots 配置
 - 导出 Warehouse 迁移包，并从迁移包校验、恢复
 
-新版迁移包为 zip 格式，固定包含以下结构：
+新版迁移包为 zip 格式，桌面端在 macOS 和 Linux 均支持导出与恢复，固定包含以下结构：
 
 ```text
 agents-manager-backup/

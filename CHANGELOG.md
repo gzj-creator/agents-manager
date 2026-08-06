@@ -23,6 +23,7 @@
 
 - 迁移包固定使用 `agents-manager-backup/` 根目录，导出前同步 `registry.toml`，恢复时校验清单和 Warehouse 完整结构。
 - 恢复采用同盘临时目录解压与目录替换，并将 registry 中的旧设备绝对路径重定位到当前 Warehouse，保留 stable ID 和标签；失败时回滚原 Warehouse，同时继续兼容 `v1.1.0` 无清单迁移包。
+- Linux 桌面端与 macOS 一样使用标准 zip 工具完成迁移包导出与恢复，不再点击后直接返回“仅支持 macOS”。
 
 ### Tests
 
